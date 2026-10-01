@@ -33,6 +33,7 @@ public class CuriosListScreen extends Screen {
     private EditBox searchBox;
     private CurioListWidget list;
     private String lastFilter = "";
+    private ItemStack hoveredIconStack = ItemStack.EMPTY;
 
     public CuriosListScreen() {
         super(Component.translatable("eternalsoul.gui.title"));
@@ -89,7 +90,12 @@ public class CuriosListScreen extends Screen {
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
+        this.hoveredIconStack = ItemStack.EMPTY;
         super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        if (!this.hoveredIconStack.isEmpty()) {
+            guiGraphics.renderTooltip(this.font, this.hoveredIconStack, mouseX, mouseY);
+        }
 
         List<CurioIndex.Entry> all = ClientCache.index();
         if (all.isEmpty()) {
@@ -172,6 +178,12 @@ public class CuriosListScreen extends Screen {
                     guiGraphics.fill(left, top, left + width, top + height, 0x25FFFFFF);
                 }
                 guiGraphics.renderItem(this.stack, left + 4, top + 5);
+
+                // 鼠标悬停在图标上时，显示原物品的完整信息
+                if (mouseX >= left + 4 && mouseX < left + 20
+                        && mouseY >= top + 5 && mouseY < top + 21) {
+                    CuriosListScreen.this.hoveredIconStack = this.stack;
+                }
 
                 boolean on = ClientCache.isEnabled(this.entry.itemId());
                 guiGraphics.drawString(CuriosListScreen.this.font,
