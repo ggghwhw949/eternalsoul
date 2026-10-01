@@ -12,5 +12,7 @@
   "eternalsoul.gui.disabled": "已关闭",
   "eternalsoul.gui.count": "共探测到 %d 个饰品",
   "eternalsoul.gui.empty": "未探测到饰品",
-  "eternalsoul.gui.hint": "点击条目可开关模拟"
+  "eternalsoul.gui.hint": "点击条目可开关模拟",
+  "eternalsoul.gui.select_all": "全选",
+  "eternalsoul.gui.invert": "反选"
 }

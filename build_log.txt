@@ -1,0 +1,31 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Task :compileJava
+D:\MC\EternalSoul\src\main\java\top\kuisland\eternalsoul\EternalSoul.java:30: ����: [removal] FMLJavaModLoadingContext �е� get() �ѹ�ʱ, �ұ��Ϊ��ɾ��
+        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+                                                   ^
+D:\MC\EternalSoul\src\main\java\top\kuisland\eternalsoul\network\Network.java:25: ����: [removal] ResourceLocation �е� ResourceLocation(String,String) �ѹ�ʱ, �ұ��Ϊ��ɾ��
+            new ResourceLocation(EternalSoul.MODID, "main"),
+            ^
+2 ������
+
+> Task :processResources
+> Task :classes
+> Task :jar
+> Task :downloadMcpConfig
+> Task :extractSrg
+> Task :createMcpToSrg
+> Task :reobfJar
+> Task :jarJar SKIPPED
+> Task :reobfJarJar SKIPPED
+> Task :assemble
+> Task :compileTestJava NO-SOURCE
+> Task :processTestResources NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :test NO-SOURCE
+> Task :check UP-TO-DATE
+> Task :build
+
+BUILD SUCCESSFUL in 18s
+7 actionable tasks: 7 executed

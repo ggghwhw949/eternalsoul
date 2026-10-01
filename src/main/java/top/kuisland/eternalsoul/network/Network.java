@@ -34,6 +34,8 @@ public final class Network {
                 TogglePacket::encode, TogglePacket::decode, TogglePacket::handle);
         CHANNEL.registerMessage(id++, SyncPacket.class,
                 SyncPacket::encode, SyncPacket::decode, SyncPacket::handle);
+        CHANNEL.registerMessage(id++, BulkTogglePacket.class,
+                BulkTogglePacket::encode, BulkTogglePacket::decode, BulkTogglePacket::handle);
     }
 
     public static void sendSync(ServerPlayer player) {

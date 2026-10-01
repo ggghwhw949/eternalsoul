@@ -6,6 +6,7 @@ import java.util.List;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.Screen;
@@ -16,6 +17,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import top.kuisland.eternalsoul.CurioIndex;
+import top.kuisland.eternalsoul.network.BulkTogglePacket;
 import top.kuisland.eternalsoul.network.Network;
 
 /**
@@ -26,7 +28,7 @@ public class CuriosListScreen extends Screen {
 
     private static final int ROW_HEIGHT = 26;
     private static final int LIST_TOP = 36;
-    private static final int BOTTOM_BAR = 24;
+    private static final int BOTTOM_BAR = 30;
 
     private EditBox searchBox;
     private CurioListWidget list;
@@ -54,7 +56,34 @@ public class CuriosListScreen extends Screen {
         addRenderableWidget(this.list);
         addRenderableWidget(this.searchBox);
         this.searchBox.setValue(this.lastFilter);
+        addRenderableWidget(Button.builder(
+                        Component.translatable("eternalsoul.gui.select_all"),
+                        b -> bulk(BulkTogglePacket.SELECT_ALL))
+                .bounds(this.width / 2 - 54, this.height - 26, 50, 20).build());
+        addRenderableWidget(Button.builder(
+                        Component.translatable("eternalsoul.gui.invert"),
+                        b -> bulk(BulkTogglePacket.INVERT))
+                .bounds(this.width / 2 + 4, this.height - 26, 50, 20).build());
         setInitialFocus(this.searchBox);
+    }
+
+    /** 批量开关：本地立即生效，同时通知服务端 */
+    private void bulk(int mode) {
+        for (CurioIndex.Entry entry : ClientCache.index()) {
+            boolean enable = mode == BulkTogglePacket.SELECT_ALL
+                    || !ClientCache.isEnabled(entry.itemId());
+            ClientCache.setLocalEnabled(entry.itemId(), enable);
+        }
+        Network.CHANNEL.sendToServer(new BulkTogglePacket(mode));
+        Minecraft.getInstance().getSoundManager().play(
+                SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        refreshEntries();
+    }
+
+    private void refreshEntries() {
+        if (this.list != null && this.searchBox != null) {
+            this.list.refresh(this.searchBox.getValue().trim().toLowerCase());
+        }
     }
 
     @Override

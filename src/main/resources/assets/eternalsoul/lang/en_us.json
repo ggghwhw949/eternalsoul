@@ -12,5 +12,7 @@
   "eternalsoul.gui.disabled": "Disabled",
   "eternalsoul.gui.count": "%d curios found",
   "eternalsoul.gui.empty": "No curios detected",
-  "eternalsoul.gui.hint": "Click an entry to toggle simulation"
+  "eternalsoul.gui.hint": "Click an entry to toggle simulation",
+  "eternalsoul.gui.select_all": "All On",
+  "eternalsoul.gui.invert": "Invert"
 }
