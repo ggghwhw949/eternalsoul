@@ -68,17 +68,34 @@ public class CuriosListScreen extends Screen {
         setInitialFocus(this.searchBox);
     }
 
-    /** 批量开关：本地立即生效，同时通知服务端 */
+    /** 批量开关：仅作用于当前搜索过滤出的条目（无过滤时为全部），本地立即生效并通知服务端 */
     private void bulk(int mode) {
+        String filter = this.lastFilter.trim().toLowerCase();
+        List<String> scope = new ArrayList<>();
         for (CurioIndex.Entry entry : ClientCache.index()) {
+            if (!matchesFilter(entry, filter)) {
+                continue;
+            }
             boolean enable = mode == BulkTogglePacket.SELECT_ALL
                     || !ClientCache.isEnabled(entry.itemId());
             ClientCache.setLocalEnabled(entry.itemId(), enable);
+            scope.add(entry.itemId().toString());
         }
-        Network.CHANNEL.sendToServer(new BulkTogglePacket(mode));
+        Network.CHANNEL.sendToServer(new BulkTogglePacket(mode, scope));
         Minecraft.getInstance().getSoundManager().play(
                 SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         refreshEntries();
+    }
+
+    /** 名称或注册 ID 包含过滤词（过滤词为空则全部匹配） */
+    private static boolean matchesFilter(CurioIndex.Entry entry, String filter) {
+        if (filter.isEmpty()) {
+            return true;
+        }
+        Item item = ForgeRegistries.ITEMS.getValue(entry.itemId());
+        String name = item == null ? ""
+                : new ItemStack(item).getHoverName().getString().toLowerCase();
+        return name.contains(filter) || entry.itemId().toString().toLowerCase().contains(filter);
     }
 
     private void refreshEntries() {
@@ -134,16 +151,10 @@ public class CuriosListScreen extends Screen {
             List<Row> rows = new ArrayList<>();
             for (CurioIndex.Entry entry : ClientCache.index()) {
                 Item item = ForgeRegistries.ITEMS.getValue(entry.itemId());
-                if (item == null) {
+                if (item == null || !matchesFilter(entry, filter)) {
                     continue;
                 }
-                ItemStack stack = new ItemStack(item);
-                String name = stack.getHoverName().getString().toLowerCase();
-                String id = entry.itemId().toString().toLowerCase();
-                if (!filter.isEmpty() && !name.contains(filter) && !id.contains(filter)) {
-                    continue;
-                }
-                rows.add(new Row(stack, entry));
+                rows.add(new Row(new ItemStack(item), entry));
             }
             rows.sort(Comparator.comparing(
                     row -> row.stack.getHoverName().getString(), String.CASE_INSENSITIVE_ORDER));

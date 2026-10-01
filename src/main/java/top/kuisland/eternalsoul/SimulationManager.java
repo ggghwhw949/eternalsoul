@@ -26,6 +26,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.server.ServerLifecycleHooks;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import top.kuisland.eternalsoul.network.Network;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioChangeEvent;
@@ -319,8 +320,16 @@ public final class SimulationManager {
     }
 
     @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        EternalSoulConfig.loadOrCreate();
+    }
+
+    @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            if (!DisabledStore.isInitialized(player)) {
+                DisabledStore.initDefaults(player, EternalSoulConfig.defaults());
+            }
             Network.sendSync(player);
         }
     }
@@ -335,6 +344,7 @@ public final class SimulationManager {
     @SubscribeEvent
     public static void onDatapackSync(OnDatapackSyncEvent event) {
         CurioIndex.invalidate();
+        EternalSoulConfig.loadOrCreate();
         if (event.getPlayer() == null) {
             if (ServerLifecycleHooks.getCurrentServer() != null) {
                 ServerLifecycleHooks.getCurrentServer().getPlayerList().getPlayers()

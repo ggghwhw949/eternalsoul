@@ -1,6 +1,7 @@
 package top.kuisland.eternalsoul;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -15,6 +16,7 @@ import net.minecraft.world.entity.player.Player;
 public final class DisabledStore {
 
     private static final String KEY = "eternalsoul_disabled";
+    private static final String INIT_KEY = "eternalsoul_initialized";
 
     private DisabledStore() {
     }
@@ -57,5 +59,25 @@ public final class DisabledStore {
             set.add(itemId.toString());
         }
         save(player, set);
+    }
+
+    /** 玩家是否已应用过默认配置（首次进服时应用一次，之后以玩家自选为准） */
+    public static boolean isInitialized(Player player) {
+        return root(player).getBoolean(INIT_KEY);
+    }
+
+    /** 用配置文件的默认开关初始化该玩家的状态并打上初始化标记 */
+    public static void initDefaults(Player player, Map<ResourceLocation, Boolean> defaults) {
+        Set<String> disabled = new HashSet<>();
+        defaults.forEach((id, enable) -> {
+            if (!enable) {
+                disabled.add(id.toString());
+            }
+        });
+        save(player, disabled);
+        CompoundTag persistent = player.getPersistentData()
+                .getCompound(Player.PERSISTED_NBT_TAG);
+        persistent.putBoolean(INIT_KEY, true);
+        player.getPersistentData().put(Player.PERSISTED_NBT_TAG, persistent);
     }
 }
