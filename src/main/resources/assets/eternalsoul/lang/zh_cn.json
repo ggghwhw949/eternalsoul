@@ -14,5 +14,6 @@
   "eternalsoul.gui.empty": "未探测到饰品",
   "eternalsoul.gui.hint": "点击条目可开关模拟",
   "eternalsoul.gui.select_all": "全选",
-  "eternalsoul.gui.invert": "反选"
+  "eternalsoul.gui.invert": "反选",
+  "eternalsoul.gui.apply_config": "应用配置"
 }

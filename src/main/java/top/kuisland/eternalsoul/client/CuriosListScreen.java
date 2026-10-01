@@ -17,6 +17,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import top.kuisland.eternalsoul.CurioIndex;
+import top.kuisland.eternalsoul.network.ApplyConfigPacket;
 import top.kuisland.eternalsoul.network.BulkTogglePacket;
 import top.kuisland.eternalsoul.network.Network;
 
@@ -60,12 +61,24 @@ public class CuriosListScreen extends Screen {
         addRenderableWidget(Button.builder(
                         Component.translatable("eternalsoul.gui.select_all"),
                         b -> bulk(BulkTogglePacket.SELECT_ALL))
-                .bounds(this.width / 2 - 54, this.height - 26, 50, 20).build());
+                .bounds(this.width / 2 - 90, this.height - 26, 50, 20).build());
         addRenderableWidget(Button.builder(
                         Component.translatable("eternalsoul.gui.invert"),
                         b -> bulk(BulkTogglePacket.INVERT))
-                .bounds(this.width / 2 + 4, this.height - 26, 50, 20).build());
+                .bounds(this.width / 2 - 36, this.height - 26, 50, 20).build());
+        addRenderableWidget(Button.builder(
+                        Component.translatable("eternalsoul.gui.apply_config"),
+                        b -> applyConfig())
+                .bounds(this.width / 2 + 18, this.height - 26, 72, 20).build());
         setInitialFocus(this.searchBox);
+    }
+
+    /** 应用配置文件的默认开关（用于全选/反选误操作后恢复初始设置） */
+    private void applyConfig() {
+        Network.CHANNEL.sendToServer(new ApplyConfigPacket());
+        Minecraft.getInstance().getSoundManager().play(
+                SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        // 状态由服务端同步回来后自动刷新（行渲染实时读取 ClientCache）
     }
 
     /** 批量开关：仅作用于当前搜索过滤出的条目（无过滤时为全部），本地立即生效并通知服务端 */
