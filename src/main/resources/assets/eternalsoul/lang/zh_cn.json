@@ -1,0 +1,16 @@
+{
+  "itemGroup.eternalsoul": "永恒之魂",
+  "item.eternalsoul.eternal_soul": "永恒之魂",
+  "eternalsoul.tooltip.1": "佩戴后，将模拟佩戴本游戏中",
+  "eternalsoul.tooltip.2": "探测到的所有饰品。",
+  "eternalsoul.tooltip.3": "按 %s 配置模拟列表。",
+  "key.categories.eternalsoul": "永恒之魂",
+  "key.eternalsoul.open_list": "打开饰品列表",
+  "eternalsoul.gui.title": "永恒之魂 — 饰品模拟",
+  "eternalsoul.gui.search_hint": "搜索...",
+  "eternalsoul.gui.enabled": "模拟中",
+  "eternalsoul.gui.disabled": "已关闭",
+  "eternalsoul.gui.count": "共探测到 %d 个饰品",
+  "eternalsoul.gui.empty": "未探测到饰品",
+  "eternalsoul.gui.hint": "点击条目可开关模拟"
+}

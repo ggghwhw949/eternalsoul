@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+
+# 运行目录（开发环境存档）
+run/
+
+# 日志与临时文件
+*.log
+*.txt.bak
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# 系统
+Thumbs.db
+.DS_Store

@@ -1,0 +1,35 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+issueTrackerURL=""
+
+[[mods]]
+modId="eternalsoul"
+version="${file.jarVersion}"
+displayName="Eternal Soul"
+authors="Kuisland"
+description='''
+Adds the Eternal Soul curio: while worn, it simulates wearing every detected curio in the game.
+Press K to open the curio list screen to search and toggle simulated items.
+'''
+
+[[dependencies.eternalsoul]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eternalsoul]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.21)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.eternalsoul]]
+    modId="curios"
+    mandatory=true
+    versionRange="[5.0,)"
+    ordering="NONE"
+    side="BOTH"

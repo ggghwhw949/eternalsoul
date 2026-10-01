@@ -1,0 +1,16 @@
+{
+  "itemGroup.eternalsoul": "Eternal Soul",
+  "item.eternalsoul.eternal_soul": "Eternal Soul",
+  "eternalsoul.tooltip.1": "While worn, simulates wearing every curio",
+  "eternalsoul.tooltip.2": "detected in this game.",
+  "eternalsoul.tooltip.3": "Press %s to configure the simulated list.",
+  "key.categories.eternalsoul": "Eternal Soul",
+  "key.eternalsoul.open_list": "Open Curios List",
+  "eternalsoul.gui.title": "Eternal Soul — Curio Simulation",
+  "eternalsoul.gui.search_hint": "Search...",
+  "eternalsoul.gui.enabled": "Simulated",
+  "eternalsoul.gui.disabled": "Disabled",
+  "eternalsoul.gui.count": "%d curios found",
+  "eternalsoul.gui.empty": "No curios detected",
+  "eternalsoul.gui.hint": "Click an entry to toggle simulation"
+}
