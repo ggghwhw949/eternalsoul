@@ -35,6 +35,12 @@ public final class ClientCache {
         return range != null && index >= range[0] && index < range[0] + range[1];
     }
 
+    /** 客户端视角：该槽位类型的虚拟槽数量（容器显示层钳制用） */
+    public static int countFor(String identifier) {
+        int[] range = ranges.get(identifier);
+        return range == null ? 0 : range[1];
+    }
+
     public static boolean isEnabled(ResourceLocation itemId) {
         return !disabled.contains(itemId.toString());
     }

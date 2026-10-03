@@ -6,7 +6,8 @@
   "refmap": "eternalsoul.refmap.json",
   "mixins": [
     "MixinCurioInventoryWrapper",
-    "MixinCurioStacksHandler"
+    "MixinCurioStacksHandler",
+    "MixinCuriosContainerV2"
   ],
   "client": [
   ],
