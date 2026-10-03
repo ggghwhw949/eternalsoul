@@ -1,5 +1,6 @@
 package top.kuisland.eternalsoul;
 
+import com.google.common.collect.Multimap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -7,12 +8,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.ai.attributes.Attribute;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 import top.theillusivec4.curios.api.CuriosApi;
+import top.theillusivec4.curios.api.SlotAttribute;
 import top.theillusivec4.curios.api.SlotContext;
 import top.theillusivec4.curios.api.type.ISlotType;
 
@@ -29,6 +34,10 @@ public final class CurioIndex {
 
     private static volatile List<Entry> cached;
     private static volatile Set<ResourceLocation> cachedIds;
+
+    /** 槽位增益探测用的占位修饰符UUID（结果只读后即弃，不落任何状态） */
+    private static final UUID PROBE_UUID =
+            UUID.nameUUIDFromBytes("eternalsoul:index-probe".getBytes());
 
     private CurioIndex() {
     }
@@ -101,6 +110,13 @@ public final class CurioIndex {
                 chosen = "curio";
             }
             if (chosen != null) {
+                // 槽位增益类饰品（自带 +N 槽位效果）不参与模拟：其增益会随虚拟堆
+                // 的装载/腾空/重锚换位被反复增删，与尾部锚定互踩形成震荡
+                // （表现为 buff 闪烁、饰品界面出现多余空槽与宽度变化）。
+                // 真实佩戴此类饰品时效果照常生效。
+                if (grantsSlotBonus(chosen, player, stack)) {
+                    continue;
+                }
                 ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
                 if (id != null) {
                     result.add(new Entry(id, chosen));
@@ -109,5 +125,21 @@ public final class CurioIndex {
         }
         result.sort(Comparator.comparing(Entry::itemId));
         return result;
+    }
+
+    /** 该物品的属性修饰符中是否含有槽位增益（SlotAttribute，即 "+N 某类槽位"） */
+    private static boolean grantsSlotBonus(String chosen, Player player, ItemStack stack) {
+        try {
+            Multimap<Attribute, AttributeModifier> attrs = CuriosApi.getAttributeModifiers(
+                    new SlotContext(chosen, player, 0, false, true), PROBE_UUID, stack);
+            for (Attribute attribute : attrs.keySet()) {
+                if (attribute instanceof SlotAttribute) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // 无法判定时不排除（保守取向）
+        }
+        return false;
     }
 }

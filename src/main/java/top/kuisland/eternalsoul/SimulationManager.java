@@ -62,6 +62,8 @@ public final class SimulationManager {
     private static final int BATCH = 80;
     /** 看门狗校验间隔（tick） */
     private static final int WATCHDOG_INTERVAL = 20;
+    /** 就地开关的批量上限：超过则走分批重建，避免单 tick 数千次槽位变更与同步包风暴 */
+    private static final int IN_PLACE_MAX = 256;
 
     private enum Phase {PLACING, CLEARING}
 
@@ -207,15 +209,20 @@ public final class SimulationManager {
         } finally {
             active.selfMutating = false;
         }
-        buildPending(active, handler);
+        buildPending(player, active, handler);
         ACTIVE.put(player.getUUID(), active);
         VirtualGuard.register(player, active.ranges);
         Network.sendSync(player);
     }
 
-    /** 依据计划构建放置队列，跳过已非空的槽位（用于断点续装） */
-    private static void buildPending(Active active, ICuriosItemHandler handler) {
+    /**
+     * 依据计划构建放置队列，跳过已非空与当前已被玩家关闭的槽位
+     * （用于断点续装/重锚/清空中断续装；就地关闭的物品必须保持空槽，
+     * 否则任何重锚都会把玩家关掉的模拟重新装回）
+     */
+    private static void buildPending(ServerPlayer player, Active active, ICuriosItemHandler handler) {
         active.pending.clear();
+        Set<String> disabledIds = DisabledStore.load(player);
         for (Map.Entry<String, List<Item>> e : active.plan.entrySet()) {
             int[] range = active.ranges.get(e.getKey());
             ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
@@ -224,9 +231,14 @@ public final class SimulationManager {
             }
             IDynamicStackHandler stacks = stacksHandler.getStacks();
             for (int i = 0; i < e.getValue().size(); i++) {
+                Item item = e.getValue().get(i);
+                ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item);
+                if (key != null && disabledIds.contains(key.toString())) {
+                    continue;
+                }
                 int index = range[0] + i;
                 if (index < stacks.getSlots() && stacks.getStackInSlot(index).isEmpty()) {
-                    active.pending.add(new PlaceOp(e.getKey(), index, e.getValue().get(i)));
+                    active.pending.add(new PlaceOp(e.getKey(), index, item));
                 }
             }
         }
@@ -271,7 +283,7 @@ public final class SimulationManager {
         }
         a.phase = Phase.PLACING;
         a.reactivate = false;
-        buildPending(a, handler);
+        buildPending(player, a, handler);
         Network.sendSync(player);
     }
 
@@ -298,7 +310,10 @@ public final class SimulationManager {
         DisabledStore.saveAll(player, disabled);
 
         Active a = ACTIVE.get(player.getUUID());
-        boolean inPlace = a != null && a.phase == Phase.PLACING;
+        // 大批量（如整表反选）走分批重建路径（每 tick 80 个），
+        // 避免单 tick 内数千次槽位变更与同步包风暴
+        boolean inPlace = a != null && a.phase == Phase.PLACING
+                && changes.size() <= IN_PLACE_MAX;
         if (inPlace) {
             for (ResourceLocation id : changes.keySet()) {
                 Item item = itemOf(id);
@@ -455,7 +470,7 @@ public final class SimulationManager {
                     handler.addTransientSlotModifiers(toAdd);
                 }
                 a.phase = Phase.PLACING;
-                buildPending(a, handler);
+                buildPending(player, a, handler);
                 VirtualGuard.register(player, a.ranges);
                 Network.sendSync(player);
             }
