@@ -28,6 +28,7 @@ import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.items.ItemHandlerHelper;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import top.kuisland.eternalsoul.network.Network;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.event.CurioChangeEvent;
@@ -172,9 +173,10 @@ public final class SimulationManager {
         }
 
         Set<Item> worn = physicallyWorn(handler);
+        Set<String> disabledIds = DisabledStore.load(player);
         Map<String, List<Item>> bySlot = new LinkedHashMap<>();
         for (CurioIndex.Entry entry : CurioIndex.get(player)) {
-            if (DisabledStore.isDisabled(player, entry.itemId())) {
+            if (disabledIds.contains(entry.itemId().toString())) {
                 continue;
             }
             Item item = itemOf(entry.itemId());
@@ -271,6 +273,107 @@ public final class SimulationManager {
         a.reactivate = false;
         buildPending(a, handler);
         Network.sendSync(player);
+    }
+
+    // ==================== 就地开关（增量更新） ====================
+
+    /**
+     * 服务端权威的开关应用入口（单条与批量共用）：先整体写回玩家的持久化
+     * 开关状态；佩戴中且全部目标都在本次激活计划内时，就地腾空/回填对应
+     * 虚拟槽位——不动槽位修饰符、不重建整套模拟；否则退回整体重建。
+     */
+    public static void applyBulkToggles(ServerPlayer player, Map<ResourceLocation, Boolean> changes) {
+        if (changes.isEmpty()) {
+            Network.sendSync(player);
+            return;
+        }
+        Set<String> disabled = DisabledStore.load(player);
+        changes.forEach((id, enable) -> {
+            if (enable) {
+                disabled.remove(id.toString());
+            } else {
+                disabled.add(id.toString());
+            }
+        });
+        DisabledStore.saveAll(player, disabled);
+
+        Active a = ACTIVE.get(player.getUUID());
+        boolean inPlace = a != null && a.phase == Phase.PLACING;
+        if (inPlace) {
+            for (ResourceLocation id : changes.keySet()) {
+                Item item = itemOf(id);
+                if (item == null || !planned(a, item)) {
+                    inPlace = false;
+                    break;
+                }
+            }
+        }
+        if (inPlace) {
+            changes.forEach((id, enable) -> toggleInPlace(player, itemOf(id), enable));
+            Network.sendSync(player);
+        } else {
+            requestDeactivate(player, true);
+        }
+    }
+
+    private static boolean planned(Active a, Item item) {
+        for (List<Item> list : a.plan.values()) {
+            if (list.contains(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 单项就地开关：物品必须已在激活计划中（激活时处于开启状态）。
+     * 开=回填其专属槽位，关=腾空其专属槽位；计划布局与虚拟区间保持
+     * 不动，因此不触碰任何槽位修饰符。无法就地处理时返回 false，
+     * 由调用方退回整体重建（如激活时关闭、后需新增的物品）。
+     */
+    private static boolean toggleInPlace(ServerPlayer player, Item item, boolean enable) {
+        Active a = ACTIVE.get(player.getUUID());
+        ICuriosItemHandler handler = handlerOf(player);
+        if (a == null || handler == null || a.phase != Phase.PLACING) {
+            return false;
+        }
+        for (Map.Entry<String, List<Item>> e : a.plan.entrySet()) {
+            int idx = e.getValue().indexOf(item);
+            if (idx < 0) {
+                continue;
+            }
+            int[] range = a.ranges.get(e.getKey());
+            ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
+            if (range == null || stacksHandler == null) {
+                return false;
+            }
+            int slot = range[0] + idx;
+            // 同步移除尚未装载的队列条目，避免与本操作竞争
+            a.pending.removeIf(op -> op.item() == item);
+            if (slot >= stacksHandler.getSlots()) {
+                return false;
+            }
+            ItemStack current = stacksHandler.getStacks().getStackInSlot(slot);
+            if (enable) {
+                if (!current.isEmpty()) {
+                    return VirtualGuard.isVirtual(current); // 已在模拟=成功；被外部占用=重建
+                }
+                ItemStack stack = new ItemStack(item);
+                VirtualGuard.track(stack);
+                handler.setEquippedCurio(e.getKey(), slot, stack);
+                return true;
+            }
+            if (current.isEmpty()) {
+                return true; // 本就未装载
+            }
+            if (!VirtualGuard.isVirtual(current)) {
+                return false; // 被外部物品占用 → 重建
+            }
+            VirtualGuard.untrack(current);
+            handler.setEquippedCurio(e.getKey(), slot, ItemStack.EMPTY);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -501,7 +604,7 @@ public final class SimulationManager {
             int[] range = e.getValue();
             boolean healthy = stacksHandler != null
                     && stacksHandler.getModifiers().containsKey(uuidFor(e.getKey()))
-                    && stacksHandler.getSlots() >= range[0] + range[1];
+                    && stacksHandler.getSlots() == range[0] + range[1]; // ③ 恰为区间末尾（尾部锚定，含外部加槽）
             if (healthy) {
                 IDynamicStackHandler stacks = stacksHandler.getStacks();
                 for (int i = range[0]; i < range[0] + range[1] && healthy; i++) {
@@ -633,6 +736,16 @@ public final class SimulationManager {
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         EternalSoulConfig.loadOrCreate();
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        // 服务器完全停止（所有存档已落盘、玩家已全部登出）：
+        // 清空静态登记，防止单机换世界/多次 /reload 累积泄漏
+        // （追踪集内强引用的失联虚拟堆、区间登记与陈旧索引）
+        ACTIVE.clear();
+        VirtualGuard.clearAll();
+        CurioIndex.invalidate();
     }
 
     @SubscribeEvent

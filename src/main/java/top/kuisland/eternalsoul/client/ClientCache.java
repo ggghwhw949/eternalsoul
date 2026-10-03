@@ -30,6 +30,14 @@ public final class ClientCache {
         ranges = Map.copyOf(newRanges);
     }
 
+    /** 离开世界时清空客户端镜像与本地索引 */
+    public static void clear() {
+        disabled = Set.of();
+        active = false;
+        ranges = Map.of();
+        index = null;
+    }
+
     public static boolean isVirtualSlot(String identifier, int index) {
         int[] range = ranges.get(identifier);
         return range != null && index >= range[0] && index < range[0] + range[1];

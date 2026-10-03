@@ -36,7 +36,8 @@ public final class DisabledStore {
         return set;
     }
 
-    private static void save(Player player, Set<String> set) {
+    /** 批量写回整个开关集合（避免逐条 setEnabled 造成 O(n²) NBT 重建） */
+    public static void saveAll(Player player, Set<String> set) {
         CompoundTag persistent = player.getPersistentData()
                 .getCompound(Player.PERSISTED_NBT_TAG);
         ListTag list = new ListTag();
@@ -58,7 +59,7 @@ public final class DisabledStore {
         } else {
             set.add(itemId.toString());
         }
-        save(player, set);
+        saveAll(player, set);
     }
 
     /** 玩家是否已应用过默认配置（首次进服时应用一次，之后以玩家自选为准） */
@@ -74,7 +75,7 @@ public final class DisabledStore {
                 disabled.add(id.toString());
             }
         });
-        save(player, disabled);
+        saveAll(player, disabled);
         CompoundTag persistent = player.getPersistentData()
                 .getCompound(Player.PERSISTED_NBT_TAG);
         persistent.putBoolean(INIT_KEY, true);

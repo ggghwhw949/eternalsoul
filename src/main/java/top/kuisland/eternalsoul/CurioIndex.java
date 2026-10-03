@@ -2,6 +2,7 @@ package top.kuisland.eternalsoul;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,12 +28,14 @@ public final class CurioIndex {
     }
 
     private static volatile List<Entry> cached;
+    private static volatile Set<ResourceLocation> cachedIds;
 
     private CurioIndex() {
     }
 
     public static void invalidate() {
         cached = null;
+        cachedIds = null;
     }
 
     public static List<Entry> get(Player player) {
@@ -40,12 +43,29 @@ public final class CurioIndex {
         if (list == null) {
             synchronized (CurioIndex.class) {
                 if (cached == null) {
-                    cached = build(player);
+                    List<Entry> built = build(player);
+                    Set<ResourceLocation> ids = new HashSet<>();
+                    for (Entry entry : built) {
+                        ids.add(entry.itemId());
+                    }
+                    // 先写 ids 再写 list：读到非空 cached 的线程必然能看到 ids
+                    cachedIds = ids;
+                    cached = built;
                 }
                 list = cached;
             }
         }
         return list;
+    }
+
+    /** 网络包白名单校验：该物品ID是否属于当前探测索引（防垃圾ID注入玩家NBT） */
+    public static boolean isKnown(ResourceLocation id, Player player) {
+        Set<ResourceLocation> ids = cachedIds;
+        if (ids == null) {
+            get(player);
+            ids = cachedIds;
+        }
+        return ids != null && ids.contains(id);
     }
 
     private static List<Entry> build(Player player) {
@@ -72,9 +92,12 @@ public final class CurioIndex {
                 if (!candidates.isEmpty()) {
                     chosen = candidates.first();
                 }
-            } else if (handlerIds.contains("curio")
+            }
+            // 回退判定：泛用 curio 槽。Curios 规则下，任何声明了槽位的物品
+            // 对 curio 上下文同样有效（isStackValid 对 id=="curio" 恒真），
+            // 因此玩家缺少物品声明的槽位类型时也走此回退，避免漏模拟。
+            if (chosen == null && handlerIds.contains("curio")
                     && CuriosApi.isStackValid(genericCurioCtx, stack)) {
-                // 泛用 curio 槽的回退判定（标签 / 谓词 / capability）
                 chosen = "curio";
             }
             if (chosen != null) {

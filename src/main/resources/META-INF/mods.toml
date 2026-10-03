@@ -30,6 +30,6 @@ Press K to open the curio list screen to search and toggle simulated items.
 [[dependencies.eternalsoul]]
     modId="curios"
     mandatory=true
-    versionRange="[5.0,)"
+    versionRange="[5.14,)"
     ordering="NONE"
     side="BOTH"

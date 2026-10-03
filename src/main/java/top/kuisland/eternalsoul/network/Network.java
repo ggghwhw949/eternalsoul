@@ -76,15 +76,11 @@ public final class Network {
                     return;
                 }
                 ResourceLocation id = ResourceLocation.tryParse(msg.itemId);
-                if (id == null) {
-                    return;
+                if (id == null
+                        || !top.kuisland.eternalsoul.CurioIndex.isKnown(id, sender)) {
+                    return; // 白名单：只接受当前探测索引内的饰品ID
                 }
-                DisabledStore.setEnabled(sender, id, msg.enable);
-                if (SimulationManager.isActive(sender)) {
-                    SimulationManager.requestDeactivate(sender, true);
-                } else {
-                    Network.sendSync(sender);
-                }
+                SimulationManager.applyBulkToggles(sender, Map.of(id, msg.enable));
             });
             ctx.get().setPacketHandled(true);
         }

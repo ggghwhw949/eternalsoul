@@ -2,7 +2,9 @@ package top.kuisland.eternalsoul.client;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -12,6 +14,7 @@ import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -35,6 +38,8 @@ public class CuriosListScreen extends Screen {
     private CurioListWidget list;
     private String lastFilter = "";
     private ItemStack hoveredIconStack = ItemStack.EMPTY;
+    /** 物品显示名（小写）缓存：过滤与排序复用，避免每次击键重复构造与翻译 */
+    private final Map<ResourceLocation, String> nameCache = new HashMap<>();
 
     public CuriosListScreen() {
         super(Component.translatable("eternalsoul.gui.title"));
@@ -101,14 +106,20 @@ public class CuriosListScreen extends Screen {
     }
 
     /** 名称或注册 ID 包含过滤词（过滤词为空则全部匹配） */
-    private static boolean matchesFilter(CurioIndex.Entry entry, String filter) {
+    private boolean matchesFilter(CurioIndex.Entry entry, String filter) {
         if (filter.isEmpty()) {
             return true;
         }
-        Item item = ForgeRegistries.ITEMS.getValue(entry.itemId());
-        String name = item == null ? ""
-                : new ItemStack(item).getHoverName().getString().toLowerCase();
-        return name.contains(filter) || entry.itemId().toString().toLowerCase().contains(filter);
+        return lowerName(entry).contains(filter)
+                || entry.itemId().toString().contains(filter);
+    }
+
+    private String lowerName(CurioIndex.Entry entry) {
+        return nameCache.computeIfAbsent(entry.itemId(), id -> {
+            Item item = ForgeRegistries.ITEMS.getValue(id);
+            return item == null ? ""
+                    : new ItemStack(item).getHoverName().getString().toLowerCase();
+        });
     }
 
     private void refreshEntries() {
@@ -164,13 +175,14 @@ public class CuriosListScreen extends Screen {
             List<Row> rows = new ArrayList<>();
             for (CurioIndex.Entry entry : ClientCache.index()) {
                 Item item = ForgeRegistries.ITEMS.getValue(entry.itemId());
-                if (item == null || !matchesFilter(entry, filter)) {
+                if (item == null || !CuriosListScreen.this.matchesFilter(entry, filter)) {
                     continue;
                 }
                 rows.add(new Row(new ItemStack(item), entry));
             }
             rows.sort(Comparator.comparing(
-                    row -> row.stack.getHoverName().getString(), String.CASE_INSENSITIVE_ORDER));
+                    row -> CuriosListScreen.this.lowerName(row.entry),
+                    String.CASE_INSENSITIVE_ORDER));
             rows.forEach(this::addEntry);
         }
 

@@ -57,6 +57,12 @@ public final class VirtualGuard {
         VIRTUAL_STACKS.clear();
     }
 
+    /** 服务器停止时整体清空（所有已追踪虚拟堆与区间登记一并释放，防跨世界泄漏） */
+    public static void clearAll() {
+        VIRTUAL_STACKS.clear();
+        RANGES.clear();
+    }
+
     public static boolean isVirtual(ItemStack stack) {
         return stack != null && !stack.isEmpty() && VIRTUAL_STACKS.contains(stack);
     }
