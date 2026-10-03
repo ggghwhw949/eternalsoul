@@ -2,7 +2,6 @@ package top.kuisland.eternalsoul;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -25,6 +24,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import top.kuisland.eternalsoul.network.Network;
@@ -37,38 +37,48 @@ import top.theillusivec4.curios.api.type.inventory.ICurioStacksHandler;
 import top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler;
 
 /**
- * 服务端模拟管理器。
+ * 服务端模拟管理器（分批状态机版）。
  * <p>
- * 原理：佩戴永恒之魂时，通过 Curios 的临时槽位修饰符
- * {@link ICuriosItemHandler#addTransientSlotModifiers(Multimap)} 为各槽类型扩容，
- * 再用 {@link ICuriosItemHandler#setEquippedCurio(String, int, ItemStack)} 把虚拟
- * 饰品堆放入新增的槽位。此后 Curios 自身的 tick 引擎会照常驱动这些饰品：
- * curioTick（主动效果）、属性修饰符（被动效果）、onEquip/onUnequip、
- * CurioChangeEvent、客户端同步、以及其他模组的 isEquipped/findCurios 查询。
+ * 原理：通过 Curios 临时槽位修饰符扩容，把虚拟饰品堆放入真实处理器，
+ * 由 Curios 原生引擎驱动全部效果（tick、属性、事件、同步、其他模组查询）。
  * <p>
- * 防复制：虚拟槽位的取出（CurioUnequipEvent DENY）与放入（CurioEquipEvent DENY）
- * 均被拦截，玩家无法从 GUI 或快捷移动拿走虚拟物品。
+ * 安全防线（配合 VirtualGuard 与 mixin）：
+ * - 存档序列化时剥离虚拟数据（serializeNBT / saveInventory）
+ * - 虚拟物品永不进入玩家背包（loseInvalidStack 虚空抹除）
+ * - 旧版污染存档载入前净化（readTag）
+ * - 收缩槽位必须等待没有任何容器界面打开（防客户端槽位越界崩溃）
+ * - 每 20 tick 看门狗自愈（其他模组破坏状态时安全重建）
  * <p>
- * 卸下流程分两阶段：先清空虚拟槽（由 tick 引擎自动移除属性并发同步包），
- * 下一 tick 再移除槽位修饰符收缩槽位，避免 loseStacks 把虚拟物品掉落成实体。
- * 死亡与登出则立即清理（实体将被丢弃，无需属性清理）。
+ * 性能：装载/清空均分批进行（每 tick BATCH 个），摊平事件与网络风暴。
+ * 状态机：PLACING（分批放入） ⇄ CLEARING（分批清空） → 终结（收缩/重建）。
  */
 public final class SimulationManager {
 
-    /** 每个佩戴者的激活状态：各槽位类型的 [base, added) 虚拟区间 */
+    /** 每 tick 放置/清空的虚拟物品数量上限 */
+    private static final int BATCH = 80;
+    /** 看门狗校验间隔（tick） */
+    private static final int WATCHDOG_INTERVAL = 20;
+
+    private enum Phase {PLACING, CLEARING}
+
     private static final Map<UUID, Active> ACTIVE = new HashMap<>();
+
+    /** 放置操作：槽位类型 + 槽位索引 + 目标物品 */
+    private record PlaceOp(String identifier, int index, Item item) {
+    }
 
     private static class Active {
         final Map<String, int[]> ranges = new LinkedHashMap<>();
-        boolean cleared;
+        final Map<String, List<Item>> plan = new LinkedHashMap<>();
+        final List<PlaceOp> pending = new ArrayList<>();
+        Phase phase = Phase.PLACING;
         boolean reactivate;
-        int phaseTick = -1;
     }
 
     private SimulationManager() {
     }
 
-    // ==================== 激活 / 停用 ====================
+    // ==================== 状态查询 ====================
 
     public static boolean isActive(Player player) {
         return ACTIVE.containsKey(player.getUUID());
@@ -85,7 +95,7 @@ public final class SimulationManager {
                 .orElse(false);
     }
 
-    /** 双方通用：判断槽位是否处于虚拟区间（服务端查 ACTIVE，客户端查同步缓存） */
+    /** 双端通用：判断槽位是否处于虚拟区间 */
     public static boolean isVirtualSlot(LivingEntity wearer, String identifier, int index) {
         if (wearer == null || identifier == null) {
             return false;
@@ -93,22 +103,25 @@ public final class SimulationManager {
         if (wearer.level().isClientSide) {
             return top.kuisland.eternalsoul.client.ClientCache.isVirtualSlot(identifier, index);
         }
-        Active a = ACTIVE.get(wearer.getUUID());
-        if (a == null) {
-            return false;
-        }
-        int[] range = a.ranges.get(identifier);
-        return range != null && index >= range[0] && index < range[0] + range[1];
+        return VirtualGuard.isVirtualIndex(wearer, identifier, index);
     }
 
     private static UUID uuidFor(String identifier) {
-        return UUID.nameUUIDFromBytes(
-                ("eternalsoul:" + identifier).getBytes(StandardCharsets.UTF_8));
+        return VirtualGuard.modifierUuid(identifier);
     }
 
-    /** 佩戴永恒之魂：扩容并放入所有启用的虚拟饰品 */
+    private static ICuriosItemHandler handlerOf(Player player) {
+        return CuriosApi.getCuriosInventory(player).resolve().orElse(null);
+    }
+
+    private static Item itemOf(ResourceLocation id) {
+        return net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(id);
+    }
+
+    // ==================== 激活 ====================
+
     static void activate(ServerPlayer player) {
-        ICuriosItemHandler handler = CuriosApi.getCuriosInventory(player).resolve().orElse(null);
+        ICuriosItemHandler handler = handlerOf(player);
         if (handler == null || ACTIVE.containsKey(player.getUUID())) {
             return;
         }
@@ -134,43 +147,80 @@ public final class SimulationManager {
                 continue;
             }
             int base = stacksHandler.getSlots();
-            int count = e.getValue().size();
-            active.ranges.put(e.getKey(), new int[]{base, count});
+            active.ranges.put(e.getKey(), new int[]{base, e.getValue().size()});
+            active.plan.put(e.getKey(), e.getValue());
             modifiers.put(e.getKey(), new AttributeModifier(uuidFor(e.getKey()),
-                    "eternalsoul", count, AttributeModifier.Operation.ADDITION));
+                    "eternalsoul", e.getValue().size(), AttributeModifier.Operation.ADDITION));
         }
         if (!modifiers.isEmpty()) {
             handler.addTransientSlotModifiers(modifiers);
         }
-        for (Map.Entry<String, List<Item>> e : bySlot.entrySet()) {
-            int[] range = active.ranges.get(e.getKey());
-            if (range == null) {
-                continue;
-            }
-            int i = 0;
-            for (Item item : e.getValue()) {
-                handler.setEquippedCurio(e.getKey(), range[0] + i, new ItemStack(item));
-                i++;
-            }
-        }
+        buildPending(active, handler);
         ACTIVE.put(player.getUUID(), active);
+        VirtualGuard.register(player, active.ranges);
         Network.sendSync(player);
     }
 
-    /** 请求停用（可携带重新激活标记），供开关变化 / 物理装备变化时重建 */
+    /** 依据计划构建放置队列，跳过已非空的槽位（用于断点续装） */
+    private static void buildPending(Active active, ICuriosItemHandler handler) {
+        active.pending.clear();
+        for (Map.Entry<String, List<Item>> e : active.plan.entrySet()) {
+            int[] range = active.ranges.get(e.getKey());
+            ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
+            if (range == null || stacksHandler == null) {
+                continue;
+            }
+            IDynamicStackHandler stacks = stacksHandler.getStacks();
+            for (int i = 0; i < e.getValue().size(); i++) {
+                int index = range[0] + i;
+                if (index < stacks.getSlots() && stacks.getStackInSlot(index).isEmpty()) {
+                    active.pending.add(new PlaceOp(e.getKey(), index, e.getValue().get(i)));
+                }
+            }
+        }
+    }
+
+    // ==================== 停用 / 重建 ====================
+
     public static void requestDeactivate(ServerPlayer player, boolean reactivate) {
         Active a = ACTIVE.get(player.getUUID());
         if (a == null) {
             return;
         }
-        if (!a.cleared) {
-            clearVirtualStacks(player, a);
-            a.cleared = true;
-            a.phaseTick = player.tickCount;
+        if (a.phase == Phase.PLACING) {
+            a.phase = Phase.CLEARING;
+            buildClearQueue(a);
         }
         if (reactivate) {
             a.reactivate = true;
         }
+    }
+
+    /** 构建清空队列：虚拟区间内的全部槽位 */
+    private static void buildClearQueue(Active a) {
+        a.pending.clear();
+        for (Map.Entry<String, List<Item>> e : a.plan.entrySet()) {
+            int[] range = a.ranges.get(e.getKey());
+            if (range == null) {
+                continue;
+            }
+            for (int i = 0; i < e.getValue().size(); i++) {
+                a.pending.add(new PlaceOp(e.getKey(), range[0] + i, e.getValue().get(i)));
+            }
+        }
+    }
+
+    /** 清空途中重新佩戴：取消清空，恢复续装 */
+    private static void resumePlacing(ServerPlayer player) {
+        Active a = ACTIVE.get(player.getUUID());
+        ICuriosItemHandler handler = handlerOf(player);
+        if (a == null || handler == null || a.phase != Phase.CLEARING) {
+            return;
+        }
+        a.phase = Phase.PLACING;
+        a.reactivate = false;
+        buildPending(a, handler);
+        Network.sendSync(player);
     }
 
     /** 死亡 / 登出等实体即将失效的场景：立即完整清理 */
@@ -179,27 +229,27 @@ public final class SimulationManager {
         if (a == null) {
             return;
         }
-        ICuriosItemHandler handler = CuriosApi.getCuriosInventory(player).resolve().orElse(null);
+        ICuriosItemHandler handler = handlerOf(player);
+        VirtualGuard.unregister(player);
         if (handler == null) {
             return;
         }
-        clearVirtualStacks(player, a);
+        clearAllVirtualStacks(player, a, handler);
         removeModifiers(handler, a);
     }
 
-    private static void clearVirtualStacks(ServerPlayer player, Active a) {
-        ICuriosItemHandler handler = CuriosApi.getCuriosInventory(player).resolve().orElse(null);
-        if (handler == null) {
-            return;
-        }
+    private static void clearAllVirtualStacks(ServerPlayer player, Active a,
+                                              ICuriosItemHandler handler) {
         for (Map.Entry<String, int[]> e : a.ranges.entrySet()) {
             ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
             if (stacksHandler == null) {
                 continue;
             }
-            int slots = stacksHandler.getSlots();
+            IDynamicStackHandler stacks = stacksHandler.getStacks();
+            int slots = stacks.getSlots();
             for (int i = e.getValue()[0]; i < e.getValue()[0] + e.getValue()[1]; i++) {
                 if (i < slots) {
+                    VirtualGuard.untrack(stacks.getStackInSlot(i));
                     handler.setEquippedCurio(e.getKey(), i, ItemStack.EMPTY);
                 }
             }
@@ -229,6 +279,132 @@ public final class SimulationManager {
         return worn;
     }
 
+    // ==================== 每 tick 推进 ====================
+
+    @SubscribeEvent
+    public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.side != LogicalSide.SERVER) {
+            return;
+        }
+        if (!(event.player instanceof ServerPlayer player)) {
+            return;
+        }
+        Active a = ACTIVE.get(player.getUUID());
+        if (a == null) {
+            return;
+        }
+        ICuriosItemHandler handler = handlerOf(player);
+        if (handler == null) {
+            ACTIVE.remove(player.getUUID());
+            VirtualGuard.unregister(player);
+            return;
+        }
+
+        if (a.phase == Phase.PLACING) {
+            placeBatch(player, a, handler);
+            // 看门狗：装载完成后周期性自检
+            if (a.pending.isEmpty() && player.tickCount % WATCHDOG_INTERVAL == 0) {
+                verify(player, a, handler);
+            }
+            return;
+        }
+
+        // CLEARING：分批清空
+        clearBatch(player, a, handler);
+        if (!a.pending.isEmpty()) {
+            return;
+        }
+        // 等待没有任何容器界面打开，避免客户端槽位收缩导致越界崩溃
+        if (player.containerMenu != player.inventoryMenu) {
+            return;
+        }
+        removeModifiers(handler, a);
+        boolean reactivate = a.reactivate && isWearingSoul(player);
+        ACTIVE.remove(player.getUUID());
+        VirtualGuard.unregister(player);
+        if (reactivate) {
+            activate(player);
+        } else {
+            Network.sendSync(player);
+        }
+    }
+
+    private static void placeBatch(ServerPlayer player, Active a, ICuriosItemHandler handler) {
+        int budget = BATCH;
+        while (budget-- > 0 && !a.pending.isEmpty()) {
+            PlaceOp op = a.pending.remove(a.pending.size() - 1);
+            ICurioStacksHandler stacksHandler = handler.getCurios().get(op.identifier());
+            if (stacksHandler == null) {
+                continue;
+            }
+            if (op.index() >= stacksHandler.getSlots()) {
+                continue; // 槽位被外部收缩，跳过（看门狗会重建）
+            }
+            ItemStack stack = new ItemStack(op.item());
+            VirtualGuard.track(stack);
+            handler.setEquippedCurio(op.identifier(), op.index(), stack);
+        }
+    }
+
+    private static void clearBatch(ServerPlayer player, Active a, ICuriosItemHandler handler) {
+        int budget = BATCH;
+        while (budget-- > 0 && !a.pending.isEmpty()) {
+            PlaceOp op = a.pending.remove(a.pending.size() - 1);
+            ICurioStacksHandler stacksHandler = handler.getCurios().get(op.identifier());
+            if (stacksHandler == null) {
+                continue;
+            }
+            IDynamicStackHandler stacks = stacksHandler.getStacks();
+            if (op.index() < stacks.getSlots()) {
+                VirtualGuard.untrack(stacks.getStackInSlot(op.index()));
+                handler.setEquippedCurio(op.identifier(), op.index(), ItemStack.EMPTY);
+            }
+        }
+    }
+
+    // ==================== 看门狗 ====================
+
+    private static void verify(ServerPlayer player, Active a, ICuriosItemHandler handler) {
+        for (Map.Entry<String, int[]> e : a.ranges.entrySet()) {
+            ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
+            int[] range = e.getValue();
+            boolean healthy = stacksHandler != null
+                    && stacksHandler.getModifiers().containsKey(uuidFor(e.getKey()))
+                    && stacksHandler.getSlots() >= range[0] + range[1];
+            if (healthy) {
+                IDynamicStackHandler stacks = stacksHandler.getStacks();
+                for (int i = range[0]; i < range[0] + range[1] && healthy; i++) {
+                    if (i < stacks.getSlots() && !stacks.getStackInSlot(i).isEmpty()
+                            && !VirtualGuard.isVirtual(stacks.getStackInSlot(i))) {
+                        healthy = false; // 槽位被外部塞入了真实物品
+                    }
+                }
+            }
+            if (!healthy) {
+                hardReset(player);
+                return;
+            }
+        }
+    }
+
+    /** 状态被外部破坏：虚空清理全部虚拟槽并重建 */
+    private static void hardReset(ServerPlayer player) {
+        Active a = ACTIVE.get(player.getUUID());
+        ICuriosItemHandler handler = handlerOf(player);
+        if (a == null || handler == null) {
+            return;
+        }
+        clearAllVirtualStacks(player, a, handler);
+        removeModifiers(handler, a);
+        ACTIVE.remove(player.getUUID());
+        VirtualGuard.unregister(player);
+        if (isWearingSoul(player)) {
+            activate(player);
+        } else {
+            Network.sendSync(player);
+        }
+    }
+
     // ==================== 事件 ====================
 
     @SubscribeEvent
@@ -237,26 +413,27 @@ public final class SimulationManager {
                 || player.level().isClientSide) {
             return;
         }
-        // 我们自己放置/清空的虚拟槽变化：忽略，避免自我触发
         if (isVirtualSlot(player, event.getIdentifier(), event.getSlotIndex())) {
-            return;
+            return; // 我们自己的放置/清空变化
         }
         boolean toSoul = event.getTo().is(EternalSoul.ETERNAL_SOUL.get());
         boolean fromSoul = event.getFrom().is(EternalSoul.ETERNAL_SOUL.get());
 
-        if (toSoul != fromSoul) {
-            if (toSoul && !ACTIVE.containsKey(player.getUUID())) {
+        if (toSoul) {
+            if (!ACTIVE.containsKey(player.getUUID())) {
                 activate(player);
-            } else if (fromSoul && ACTIVE.containsKey(player.getUUID())
-                    && !isWearingSoul(player)) {
-                requestDeactivate(player, false);
+            } else if (ACTIVE.get(player.getUUID()).phase == Phase.CLEARING) {
+                resumePlacing(player); // 清空途中戴回：取消清空继续装
             }
             return;
         }
+        if (fromSoul && ACTIVE.containsKey(player.getUUID()) && !isWearingSoul(player)) {
+            requestDeactivate(player, false);
+            return;
+        }
         // 佩戴状态下，真实槽位装备了正在模拟的物品 → 重建避免双重效果
-        if (ACTIVE.containsKey(player.getUUID()) && !toSoul) {
-            Item changed = event.getTo().isEmpty() ? event.getFrom().getItem()
-                    : event.getTo().getItem();
+        if (ACTIVE.containsKey(player.getUUID()) && !event.getTo().isEmpty()) {
+            Item changed = event.getTo().getItem();
             if (isSimulatedItem(player, changed)) {
                 requestDeactivate(player, true);
             }
@@ -268,41 +445,13 @@ public final class SimulationManager {
         if (a == null) {
             return false;
         }
-        return CuriosApi.getCuriosInventory(player)
-                .map(h -> h.findCurios(item).stream()
-                        .anyMatch(r -> isVirtualSlot(player, r.slotContext().identifier(),
-                                r.slotContext().index())))
-                .orElse(false);
-    }
-
-    @SubscribeEvent
-    public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END
-                || event.side != net.minecraftforge.fml.LogicalSide.SERVER) {
-            return;
+        for (Map.Entry<String, List<Item>> e : a.plan.entrySet()) {
+            if (e.getValue().contains(item)
+                    && VirtualGuard.isVirtualIndex(player, e.getKey(), 0)) {
+                return true;
+            }
         }
-        if (!(event.player instanceof ServerPlayer player)) {
-            return;
-        }
-        Active a = ACTIVE.get(player.getUUID());
-        if (a == null || !a.cleared || a.phaseTick < 0
-                || player.tickCount <= a.phaseTick) {
-            return;
-        }
-        // 阶段二：属性已被 tick 引擎移除，现在安全收缩槽位
-        ICuriosItemHandler handler = CuriosApi.getCuriosInventory(player).resolve().orElse(null);
-        if (handler == null) {
-            ACTIVE.remove(player.getUUID());
-            return;
-        }
-        removeModifiers(handler, a);
-        boolean reactivate = a.reactivate && isWearingSoul(player);
-        ACTIVE.remove(player.getUUID());
-        if (reactivate) {
-            activate(player);
-        } else {
-            Network.sendSync(player);
-        }
+        return false;
     }
 
     @SubscribeEvent
@@ -320,11 +469,6 @@ public final class SimulationManager {
     }
 
     @SubscribeEvent
-    public static void onServerStarted(ServerStartedEvent event) {
-        EternalSoulConfig.loadOrCreate();
-    }
-
-    @SubscribeEvent
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             if (!DisabledStore.isInitialized(player)) {
@@ -339,6 +483,11 @@ public final class SimulationManager {
         if (event.getEntity() instanceof ServerPlayer player && isWearingSoul(player)) {
             activate(player);
         }
+    }
+
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        EternalSoulConfig.loadOrCreate();
     }
 
     @SubscribeEvent
@@ -371,10 +520,5 @@ public final class SimulationManager {
                 event.getSlotContext().index())) {
             event.setResult(Event.Result.DENY);
         }
-    }
-
-    /** 通过注册表 id 取物品 */
-    private static Item itemOf(ResourceLocation id) {
-        return net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(id);
     }
 }

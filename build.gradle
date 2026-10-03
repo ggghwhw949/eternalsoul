@@ -2,6 +2,7 @@ plugins {
     id 'eclipse'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
 }
 
 version = mod_version
@@ -49,8 +50,14 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${version_forge}"
 
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
     compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:${version_curios}")
     runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:${version_curios}")
+}
+
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
 }
 
 jar {
@@ -62,7 +69,8 @@ jar {
                 'Implementation-Title'    : mod_id,
                 'Implementation-Version'  : mod_version,
                 'Implementation-Vendor'   : 'Kuisland',
-                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'            : "${mod_id}.mixins.json"
         ])
     }
 }
