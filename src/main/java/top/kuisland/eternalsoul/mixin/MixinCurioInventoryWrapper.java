@@ -32,8 +32,10 @@ public abstract class MixinCurioInventoryWrapper {
         }
     }
 
-    @Inject(method = "saveInventory(ZLjava/util/function/BiPredicate;)Ljava/util/ListTag;",
-            at = @At("TAIL"), remap = false)
+    // 按名称匹配全部三个重载（(Z)、(Z, Predicate)、(Z, BiPredicate)），
+    // 前两者最终都会委托到 BiPredicate 版本；剥离操作幂等，多次执行无害。
+    // 注：显式 descriptor 匹配在空 refmap + remap=false 组合下无法命中，故用纯名称。
+    @Inject(method = "saveInventory", at = @At("TAIL"), remap = false)
     private void eternalsoul$stripSaved(CallbackInfoReturnable<ListTag> cir) {
         LivingEntity wearer = this.getWearer();
         if (wearer == null) {
