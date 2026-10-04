@@ -1,6 +1,10 @@
 package top.kuisland.eternalsoul;
 
 import com.mojang.logging.LogUtils;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -13,6 +17,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.SlotContext;
@@ -124,6 +129,28 @@ public final class CurioIndex {
         result.sort(Comparator.comparing(Entry::itemId));
         LOGGER.info("[EternalSoul-DIAG] index build: registry={} included={} noSlot={}",
                 registryCount, result.size(), noSlot);
+        if (!player.level().isClientSide) {
+            dumpIndex(result);
+        }
         return result;
+    }
+
+    /**
+     * 服务端索引快照：写入 logs/eternalsoul-index.txt（每次构建覆盖）。
+     * 任何"某饰品没被探测到"的问题均可直接对照此文件核对，
+     * 不在文件内 = Curios 规则下放不进玩家饰品栏（或能力判定未通过）。
+     */
+    private static void dumpIndex(List<Entry> entries) {
+        try {
+            Path out = FMLPaths.GAMEDIR.get().resolve("logs").resolve("eternalsoul-index.txt");
+            StringBuilder sb = new StringBuilder();
+            sb.append("# 永恒之魂 饰品索引快照（每次构建覆盖） 共 ").append(entries.size()).append(" 件\n");
+            for (Entry e : entries) {
+                sb.append(e.itemId()).append(" -> ").append(e.slot()).append('\n');
+            }
+            Files.writeString(out, sb.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+            // 快照写失败不影响功能
+        }
     }
 }
