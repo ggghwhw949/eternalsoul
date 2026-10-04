@@ -49,6 +49,10 @@ public class EternalSoul {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        event.enqueueWork(Network::register);
+        event.enqueueWork(() -> {
+            Network.register();
+            // 客户端侧也加载配置（宽松回退开关供本地索引构建读取；服务端另行在启动时加载）
+            EternalSoulConfig.loadOrCreate();
+        });
     }
 }

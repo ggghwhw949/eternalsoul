@@ -1,6 +1,7 @@
 package top.kuisland.eternalsoul;
 
 import com.google.common.collect.Multimap;
+import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -16,6 +17,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.slf4j.Logger;
 import top.theillusivec4.curios.api.CuriosApi;
 import top.theillusivec4.curios.api.SlotAttribute;
 import top.theillusivec4.curios.api.SlotContext;
@@ -34,6 +36,8 @@ public final class CurioIndex {
 
     private static volatile List<Entry> cached;
     private static volatile Set<ResourceLocation> cachedIds;
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 槽位增益探测用的占位修饰符UUID（结果只读后即弃，不落任何状态） */
     private static final UUID PROBE_UUID =
@@ -83,11 +87,16 @@ public final class CurioIndex {
                 .map(handler -> Set.copyOf(handler.getCurios().keySet()))
                 .orElse(Set.of());
         SlotContext genericCurioCtx = new SlotContext("curio", player, 0, false, true);
+        int registryCount = 0;
+        int noSlot = 0;
+        int excludedBonus = 0;
+        List<String> bonusExamples = new ArrayList<>();
 
         for (Item item : ForgeRegistries.ITEMS) {
             if (item == EternalSoul.ETERNAL_SOUL.get()) {
                 continue;
             }
+            registryCount++;
             ItemStack stack = new ItemStack(item);
             if (stack.isEmpty()) {
                 continue;
@@ -100,32 +109,46 @@ public final class CurioIndex {
                 candidates.retainAll(handlerIds);
                 if (!candidates.isEmpty()) {
                     chosen = candidates.first();
+                } else if (EternalSoulConfig.looseSlotFallback()
+                        && handlerIds.contains("curio")
+                        && CuriosApi.isStackValid(genericCurioCtx, stack)) {
+                    // 宽松回退（可经 looseSlotFallback 配置关闭）：声明槽位玩家
+                    // 不具备的物品经泛用 curio 槽参与模拟
+                    chosen = "curio";
                 }
-            }
-            // 回退判定：泛用 curio 槽（宽松覆盖语义：能放进饰品栏的都算）。
-            // Curios 规则下，任何声明了槽位的物品对 curio 上下文同样有效，
-            // 因此声明了未注册槽位类型（artifact_*/boot/halo 等）的物品也
-            // 经此回退参与模拟。配套安全机制：真实装备/卸下走 O(1) 就地
-            // 腾空/回填（见 onCurioChange），不再触发整表重建。
-            if (chosen == null && handlerIds.contains("curio")
+            } else if (handlerIds.contains("curio")
                     && CuriosApi.isStackValid(genericCurioCtx, stack)) {
+                // 未声明槽位：标签/谓词/能力回退（固定行为，不受开关影响）
                 chosen = "curio";
             }
-            if (chosen != null) {
-                // 槽位增益类饰品（自带 +N 槽位效果）不参与模拟：其增益会随虚拟堆
-                // 的装载/腾空/重锚换位被反复增删，与尾部锚定互踩形成震荡
-                // （表现为 buff 闪烁、饰品界面出现多余空槽与宽度变化）。
-                // 真实佩戴此类饰品时效果照常生效。
-                if (grantsSlotBonus(chosen, player, stack)) {
-                    continue;
+            if (chosen == null) {
+                noSlot++;
+                continue;
+            }
+            // 槽位增益类饰品（自带 +N 槽位效果）不参与模拟：其增益会随虚拟堆
+            // 的装载/腾空/重锚换位被反复增删，与尾部锚定互踩形成震荡。
+            // 真实佩戴此类饰品时效果照常生效。
+            if (grantsSlotBonus(chosen, player, stack)) {
+                excludedBonus++;
+                if (bonusExamples.size() < 8) {
+                    ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+                    if (id != null) {
+                        bonusExamples.add(id.toString());
+                    }
                 }
-                ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
-                if (id != null) {
-                    result.add(new Entry(id, chosen));
-                }
+                continue;
+            }
+            ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
+            if (id != null) {
+                result.add(new Entry(id, chosen));
+            } else {
+                noSlot++;
             }
         }
         result.sort(Comparator.comparing(Entry::itemId));
+        LOGGER.info("[EternalSoul-DIAG] index build: registry={} included={} noSlot={} "
+                        + "excludedSlotBonus={} bonusExamples={}",
+                registryCount, result.size(), noSlot, excludedBonus, bonusExamples);
         return result;
     }
 

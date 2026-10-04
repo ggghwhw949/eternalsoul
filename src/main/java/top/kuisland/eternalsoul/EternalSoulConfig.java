@@ -27,7 +27,14 @@ public final class EternalSoulConfig {
 
     private static final Map<ResourceLocation, Boolean> DEFAULTS = new LinkedHashMap<>();
 
+    /** 宽松槽位回退开关：声明槽位玩家不具备的物品是否经泛用 curio 槽参与模拟 */
+    private static volatile boolean looseSlotFallback = true;
+
     private EternalSoulConfig() {
+    }
+
+    public static boolean looseSlotFallback() {
+        return looseSlotFallback;
     }
 
     public static Map<ResourceLocation, Boolean> defaults() {
@@ -61,8 +68,16 @@ public final class EternalSoulConfig {
             LOGGER.debug("[EternalSoul] 忽略无法解析的配置行: {}", line);
             return;
         }
-        ResourceLocation id = ResourceLocation.tryParse(line.substring(0, eq).trim());
+        String key = line.substring(0, eq).trim();
         String value = line.substring(eq + 1).trim();
+        // 系统开关（非饰品条目）
+        if (key.equalsIgnoreCase("looseSlotFallback")) {
+            if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
+                looseSlotFallback = Boolean.parseBoolean(value);
+            }
+            return;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(key);
         if (id == null || !(value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false"))) {
             LOGGER.debug("[EternalSoul] 忽略无法解析的配置行: {}", line);
             return;
@@ -84,6 +99,12 @@ public final class EternalSoulConfig {
                 # * 饰品ID 对应的模组未安装时该行自动忽略，不会报错，
                 #   可以放心预写。可按行/按块自由添加。
                 #
+                # ------------------ 系统开关 ------------------
+                # looseSlotFallback：宽松槽位回退。
+                #   true  = 声明了玩家不具备的槽位类型的物品，也经泛用 curio 槽
+                #           参与模拟（覆盖最大化）
+                #   false = 此类物品不参与模拟（如遇效果闪烁等异常可用于对照
+                #           测试；修改后 /reload 或重进世界生效）
                 # 示例（可自行修改或删除）：
                 #   # 某模组的戒指
                 #   example:impossible_ring = false
@@ -91,6 +112,7 @@ public final class EternalSoulConfig {
                 #
                 # ================================================================
 
+                looseSlotFallback = true
                 example:some_mod_item_not_installed_a = false
                 example:this_item_never_exists_b = true
                 example:impossible_curio_id_c = false
