@@ -63,8 +63,8 @@ import top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler;
  */
 public final class SimulationManager {
 
-    /** 每 tick 放置/清空的虚拟物品数量上限 */
-    private static final int BATCH = 80;
+    /** 每 tick 放置/清空的虚拟物品数量上限（近即时装载；仅防极端巨型包的单tick风暴） */
+    private static final int BATCH = 2048;
     /** 看门狗校验间隔（tick） */
     private static final int WATCHDOG_INTERVAL = 20;
     /** 就地开关的批量上限：超过则走分批重建，避免单 tick 数千次槽位变更与同步包风暴 */
