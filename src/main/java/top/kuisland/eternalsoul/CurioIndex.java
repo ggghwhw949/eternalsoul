@@ -101,12 +101,13 @@ public final class CurioIndex {
                 if (!candidates.isEmpty()) {
                     chosen = candidates.first();
                 }
-            }
-            // 回退判定：泛用 curio 槽。Curios 规则下，任何声明了槽位的物品
-            // 对 curio 上下文同样有效（isStackValid 对 id=="curio" 恒真），
-            // 因此玩家缺少物品声明的槽位类型时也走此回退，避免漏模拟。
-            if (chosen == null && handlerIds.contains("curio")
+                // 注意：声明了槽位类型但玩家不具备时【不】回退到泛用 curio 槽。
+                // 整合包常存在声明未注册槽位类型（artifact_*/boot/halo 等）的
+                // 大量物品，回退会把它们全部灌入 curio 计划，导致巨型重建
+                // 风暴与客户端同步竞态（v1.2.1~1.2.2 的闪烁/显形/开关回退根源）。
+            } else if (handlerIds.contains("curio")
                     && CuriosApi.isStackValid(genericCurioCtx, stack)) {
+                // 完全未声明槽位的物品才走泛用 curio 槽回退（标签/谓词判定）
                 chosen = "curio";
             }
             if (chosen != null) {

@@ -2,6 +2,7 @@ package top.kuisland.eternalsoul;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
+import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -64,6 +66,18 @@ public final class SimulationManager {
     private static final int WATCHDOG_INTERVAL = 20;
     /** 就地开关的批量上限：超过则走分批重建，避免单 tick 数千次槽位变更与同步包风暴 */
     private static final int IN_PLACE_MAX = 256;
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+    /** 诊断日志节流（毫秒）：重建风暴时防止刷屏，同时保留可辨识的触发序列 */
+    private static long lastDiagTime;
+
+    private static void diag(String format, Object... args) {
+        long now = System.currentTimeMillis();
+        if (now - lastDiagTime >= 250) {
+            lastDiagTime = now;
+            LOGGER.info("[EternalSoul-DIAG] " + format, args);
+        }
+    }
 
     private enum Phase {PLACING, CLEARING}
 
@@ -212,6 +226,8 @@ public final class SimulationManager {
         buildPending(player, active, handler);
         ACTIVE.put(player.getUUID(), active);
         VirtualGuard.register(player, active.ranges);
+        diag("activate: slotTypes={} totalItems={}", active.ranges.size(),
+                active.plan.values().stream().mapToInt(List::size).sum());
         Network.sendSync(player);
     }
 
@@ -284,6 +300,7 @@ public final class SimulationManager {
         a.phase = Phase.PLACING;
         a.reactivate = false;
         buildPending(player, a, handler);
+        diag("resumePlacing (soul re-equipped during clearing)");
         Network.sendSync(player);
     }
 
@@ -327,6 +344,8 @@ public final class SimulationManager {
             changes.forEach((id, enable) -> toggleInPlace(player, itemOf(id), enable));
             Network.sendSync(player);
         } else {
+            diag("toggles: n={} -> full rebuild (not planned / clearing / over limit)",
+                    changes.size());
             requestDeactivate(player, true);
         }
     }
@@ -434,6 +453,14 @@ public final class SimulationManager {
             }
             if (!toRemove.isEmpty()) {
                 handler.removeSlotModifiers(toRemove);
+                // 立即触发延迟收缩：访问一次 getStacks() 让 update() 生效，
+                // 避免 RANGES 注销后处理器仍处于扩容状态的窗口
+                for (String id : toRemove.keySet()) {
+                    ICurioStacksHandler sh = handler.getCurios().get(id);
+                    if (sh != null) {
+                        sh.getStacks();
+                    }
+                }
             }
             for (Map.Entry<String, Map<Integer, ItemStack>> e : reseat.entrySet()) {
                 ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
@@ -499,6 +526,7 @@ public final class SimulationManager {
         if (a == null) {
             return;
         }
+        diag("immediateClean (death/logout)");
         ICuriosItemHandler handler = handlerOf(player);
         VirtualGuard.unregister(player);
         if (handler == null) {
@@ -547,6 +575,7 @@ public final class SimulationManager {
             if (a.reanchorRequested && !a.selfMutating) {
                 a.reanchorRequested = false;
                 if (!isTailAnchored(a, handler)) {
+                    diag("reanchor: tail anchor broken, retargeting");
                     retarget(player, a, handler, true);
                     return;
                 }
@@ -571,6 +600,7 @@ public final class SimulationManager {
         boolean reactivate = a.reactivate && isWearingSoul(player);
         ACTIVE.remove(player.getUUID());
         VirtualGuard.unregister(player);
+        diag("deactivate complete, reactivate={}", reactivate);
         if (reactivate) {
             activate(player);
         } else {
@@ -632,6 +662,12 @@ public final class SimulationManager {
                 }
             }
             if (!healthy) {
+                diag("watchdog unhealthy: id={} slots={} expected={} modifier={} foreignStack={}",
+                        e.getKey(),
+                        stacksHandler == null ? -1 : stacksHandler.getSlots(),
+                        range[0] + range[1],
+                        stacksHandler != null
+                                && stacksHandler.getModifiers().containsKey(uuidFor(e.getKey())));
                 hardReset(player);
                 return;
             }
@@ -645,6 +681,7 @@ public final class SimulationManager {
         if (a == null || handler == null) {
             return;
         }
+        diag("hardReset (watchdog)");
         retarget(player, a, handler, false);
         ACTIVE.remove(player.getUUID());
         VirtualGuard.unregister(player);
@@ -685,6 +722,8 @@ public final class SimulationManager {
         if (ACTIVE.containsKey(player.getUUID()) && !event.getTo().isEmpty()) {
             Item changed = event.getTo().getItem();
             if (isSimulatedItem(player, changed)) {
+                diag("rebuild: real slot now holds simulated item {}",
+                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
                 requestDeactivate(player, true);
             }
         }
