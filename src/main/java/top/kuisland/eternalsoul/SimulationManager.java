@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -33,7 +34,9 @@ import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import top.kuisland.eternalsoul.network.Network;
 import top.theillusivec4.curios.api.CuriosApi;
+import top.theillusivec4.curios.api.SlotAttribute;
 import top.theillusivec4.curios.api.event.CurioChangeEvent;
+import top.theillusivec4.curios.api.event.CurioAttributeModifierEvent;
 import top.theillusivec4.curios.api.event.CurioEquipEvent;
 import top.theillusivec4.curios.api.event.CurioUnequipEvent;
 import top.theillusivec4.curios.api.event.SlotModifiersUpdatedEvent;
@@ -760,6 +763,26 @@ public final class SimulationManager {
             return;
         }
         a.reanchorRequested = true;
+    }
+
+    /**
+     * 虚拟堆的槽位增益屏蔽：Curios 计算饰品属性时，若该堆是我们的虚拟堆，
+     * 移除其全部槽位增益（SlotAttribute，"+N 某类槽位"）条目。
+     * 理由：此类增益会随虚拟堆的装载/腾空/重锚换位被反复增删，与尾部
+     * 锚定互踩形成震荡。屏蔽后物品其余效果照常模拟，真实佩戴时槽位
+     * 增益照常生效（真实堆非虚拟堆，不经过此屏蔽）。
+     * 服务端装备/卸载路径与 Curios 内部的 cached 清理均经由此事件计算，
+     * 三处口径一致，不会产生残留修饰符。
+     */
+    @SubscribeEvent
+    public static void onCurioAttributeModifiers(CurioAttributeModifierEvent event) {
+        if (VirtualGuard.isVirtual(event.getItemStack())) {
+            for (Attribute attribute : event.getOriginalModifiers().keySet()) {
+                if (attribute instanceof SlotAttribute) {
+                    event.removeAttribute(attribute);
+                }
+            }
+        }
     }
 
     @SubscribeEvent
