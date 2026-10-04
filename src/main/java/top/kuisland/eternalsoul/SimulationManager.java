@@ -408,6 +408,8 @@ public final class SimulationManager {
                 ItemStack stack = new ItemStack(item);
                 VirtualGuard.track(stack);
                 handler.setEquippedCurio(e.getKey(), slot, stack);
+                diag("toggle-inplace: {} ENABLED at {}:{}",
+                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item), e.getKey(), slot);
                 return true;
             }
             if (current.isEmpty()) {
@@ -418,6 +420,8 @@ public final class SimulationManager {
             }
             VirtualGuard.untrack(current);
             handler.setEquippedCurio(e.getKey(), slot, ItemStack.EMPTY);
+            diag("toggle-inplace: {} DISABLED at {}:{}",
+                    net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item), e.getKey(), slot);
             return true;
         }
         return false;
@@ -777,10 +781,16 @@ public final class SimulationManager {
     @SubscribeEvent
     public static void onCurioAttributeModifiers(CurioAttributeModifierEvent event) {
         if (VirtualGuard.isVirtual(event.getItemStack())) {
+            boolean removed = false;
             for (Attribute attribute : event.getOriginalModifiers().keySet()) {
                 if (attribute instanceof SlotAttribute) {
                     event.removeAttribute(attribute);
+                    removed = true;
                 }
+            }
+            if (removed) {
+                diag("slot-bonus suppressed on virtual stack: {}",
+                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(event.getItemStack().getItem()));
             }
         }
     }
