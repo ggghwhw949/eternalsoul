@@ -239,6 +239,7 @@ public final class SimulationManager {
     private static void buildPending(ServerPlayer player, Active active, ICuriosItemHandler handler) {
         active.pending.clear();
         Set<String> disabledIds = DisabledStore.load(player);
+        Set<Item> wornItems = physicallyWorn(handler);
         for (Map.Entry<String, List<Item>> e : active.plan.entrySet()) {
             int[] range = active.ranges.get(e.getKey());
             ICurioStacksHandler stacksHandler = handler.getCurios().get(e.getKey());
@@ -248,6 +249,10 @@ public final class SimulationManager {
             IDynamicStackHandler stacks = stacksHandler.getStacks();
             for (int i = 0; i < e.getValue().size(); i++) {
                 Item item = e.getValue().get(i);
+                // 真实佩戴中：保持空槽防双倍（O(1)装备处理清空的槽不许被续装回填）
+                if (wornItems.contains(item)) {
+                    continue;
+                }
                 ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item);
                 if (key != null && disabledIds.contains(key.toString())) {
                     continue;
@@ -392,6 +397,11 @@ public final class SimulationManager {
                 if (!current.isEmpty()) {
                     return VirtualGuard.isVirtual(current); // 已在模拟=成功；被外部占用=重建
                 }
+                // 玩家已关闭该物品时保持空槽（真实卸下的自动回填也尊重开关）
+                ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item);
+                if (key != null && DisabledStore.isDisabled(player, key)) {
+                    return true;
+                }
                 ItemStack stack = new ItemStack(item);
                 VirtualGuard.track(stack);
                 handler.setEquippedCurio(e.getKey(), slot, stack);
@@ -535,13 +545,14 @@ public final class SimulationManager {
         retarget(player, a, handler, false);
     }
 
+    /** 真实佩戴的物品种类（不含虚拟堆；用于激活过滤与续装防双倍） */
     private static Set<Item> physicallyWorn(ICuriosItemHandler handler) {
         Set<Item> worn = new HashSet<>();
         for (Map.Entry<String, ICurioStacksHandler> e : handler.getCurios().entrySet()) {
             IDynamicStackHandler stacks = e.getValue().getStacks();
             for (int i = 0; i < stacks.getSlots(); i++) {
                 ItemStack stack = stacks.getStackInSlot(i);
-                if (!stack.isEmpty()) {
+                if (!stack.isEmpty() && !VirtualGuard.isVirtual(stack)) {
                     worn.add(stack.getItem());
                 }
             }
@@ -718,13 +729,22 @@ public final class SimulationManager {
             requestDeactivate(player, false);
             return;
         }
-        // 佩戴状态下，真实槽位装备了正在模拟的物品 → 重建避免双重效果
-        if (ACTIVE.containsKey(player.getUUID()) && !event.getTo().isEmpty()) {
-            Item changed = event.getTo().getItem();
-            if (isSimulatedItem(player, changed)) {
-                diag("rebuild: real slot now holds simulated item {}",
-                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
-                requestDeactivate(player, true);
+        Active a = ACTIVE.get(player.getUUID());
+        // 佩戴状态下的真实装备变化 → O(1) 就地腾空/回填该物品的虚拟槽位，
+        // 不再整表重建（覆盖面大时重建是秒级风暴，也是闪烁的主因）
+        if (a != null && a.phase == Phase.PLACING) {
+            if (!event.getTo().isEmpty()) {
+                Item changed = event.getTo().getItem();
+                if (planned(a, changed) && toggleInPlace(player, changed, false)) {
+                    diag("real equip: cleared virtual slot of {}",
+                            net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
+                }
+            } else if (!event.getFrom().isEmpty()) {
+                Item changed = event.getFrom().getItem();
+                if (planned(a, changed) && toggleInPlace(player, changed, true)) {
+                    diag("real unequip: refilled virtual slot of {}",
+                            net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
+                }
             }
         }
     }
@@ -740,20 +760,6 @@ public final class SimulationManager {
             return;
         }
         a.reanchorRequested = true;
-    }
-
-    private static boolean isSimulatedItem(ServerPlayer player, Item item) {
-        Active a = ACTIVE.get(player.getUUID());
-        if (a == null) {
-            return false;
-        }
-        for (Map.Entry<String, List<Item>> e : a.plan.entrySet()) {
-            if (e.getValue().contains(item)
-                    && VirtualGuard.isVirtualIndex(player, e.getKey(), 0)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     @SubscribeEvent

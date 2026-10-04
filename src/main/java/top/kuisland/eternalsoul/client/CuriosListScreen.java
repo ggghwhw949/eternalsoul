@@ -86,6 +86,9 @@ public class CuriosListScreen extends Screen {
         // 状态由服务端同步回来后自动刷新（行渲染实时读取 ClientCache）
     }
 
+    /** 每个批量包携带的ID数上限：巨表全选时分包发送，避免超出自定义负载32KB上限 */
+    private static final int BULK_CHUNK = 200;
+
     /** 批量开关：仅作用于当前搜索过滤出的条目（无过滤时为全部），本地立即生效并通知服务端 */
     private void bulk(int mode) {
         String filter = this.lastFilter.trim().toLowerCase();
@@ -99,7 +102,14 @@ public class CuriosListScreen extends Screen {
             ClientCache.setLocalEnabled(entry.itemId(), enable);
             scope.add(entry.itemId().toString());
         }
-        Network.CHANNEL.sendToServer(new BulkTogglePacket(mode, scope));
+        // 分包发送：服务端按序处理，INVERT 语义按到达顺序叠加仍正确
+        for (int i = 0; i < scope.size(); i += BULK_CHUNK) {
+            Network.CHANNEL.sendToServer(new BulkTogglePacket(mode,
+                    scope.subList(i, Math.min(scope.size(), i + BULK_CHUNK))));
+        }
+        if (scope.isEmpty()) {
+            Network.CHANNEL.sendToServer(new BulkTogglePacket(mode, scope));
+        }
         Minecraft.getInstance().getSoundManager().play(
                 SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
         refreshEntries();
