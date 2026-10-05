@@ -73,8 +73,18 @@ public final class CurioIndex {
         if (ids == null) {
             get(player);
             ids = cachedIds;
+            if (ids == null) {
+                // 兜底：get() 命中缓存时不会重算 cachedIds，从缓存条目派生，
+                // 消除 invalidate()/build() 竞态下白名单误杀全部ID的窗口
+                List<Entry> list = get(player);
+                Set<ResourceLocation> derived = new HashSet<>();
+                for (Entry entry : list) {
+                    derived.add(entry.itemId());
+                }
+                ids = derived;
+            }
         }
-        return ids != null && ids.contains(id);
+        return ids.contains(id);
     }
 
     private static List<Entry> build(Player player) {
