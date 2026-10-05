@@ -74,6 +74,9 @@ public final class SimulationManager {
     /** 诊断日志节流（毫秒）：重建风暴时防止刷屏，同时保留可辨识的触发序列 */
     private static long lastDiagTime;
 
+    /** 钳制探针节流（毫秒）：clampSlotsView 每帧调用，须独立限频 */
+    private static long lastClampDiag;
+
     private static void diag(String format, Object... args) {
         long now = System.currentTimeMillis();
         if (now - lastDiagTime >= 250) {
@@ -144,7 +147,15 @@ public final class SimulationManager {
         for (Map.Entry<String, ICurioStacksHandler> e : handler.getCurios().entrySet()) {
             if (e.getValue().getStacks() == stacksInstance) {
                 int count = tailCountFor(wearer, e.getKey());
-                return count > 0 ? Math.max(0, real - count) : real;
+                int result = count > 0 ? Math.max(0, real - count) : real;
+                long now = System.currentTimeMillis();
+                if (now - lastClampDiag > 1000) {
+                    lastClampDiag = now;
+                    LOGGER.info("[EternalSoul-DIAG] clamp: side={} id={} real={} ours={} -> {}",
+                            wearer.level().isClientSide ? "client" : "server",
+                            e.getKey(), real, count, result);
+                }
+                return result;
             }
         }
         return real;
