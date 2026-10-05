@@ -67,8 +67,8 @@ public final class SimulationManager {
     private static final int BATCH = 2048;
     /** 看门狗校验间隔（tick） */
     private static final int WATCHDOG_INTERVAL = 20;
-    /** 就地开关的批量上限：超过则走分批重建，避免单 tick 数千次槽位变更与同步包风暴 */
-    private static final int IN_PLACE_MAX = 256;
+    /** 就地开关的批量上限（与 BATCH 对齐；防极端巨型包的单tick风暴） */
+    private static final int IN_PLACE_MAX = 2048;
 
     private static final Logger LOGGER = LogUtils.getLogger();
     /** 诊断日志节流（毫秒）：重建风暴时防止刷屏，同时保留可辨识的触发序列 */
@@ -191,15 +191,12 @@ public final class SimulationManager {
             return;
         }
 
-        Set<Item> worn = physicallyWorn(handler);
-        Set<String> disabledIds = DisabledStore.load(player);
+        // 计划 = 全部探测条目（预留槽位制）：禁用/真实佩戴中的物品也占位但留空。
+        // 任何开关（含反选/全选）因此都是 O(1) 就地腾空/回填，永不触发重建。
         Map<String, List<Item>> bySlot = new LinkedHashMap<>();
         for (CurioIndex.Entry entry : CurioIndex.get(player)) {
-            if (disabledIds.contains(entry.itemId().toString())) {
-                continue;
-            }
             Item item = itemOf(entry.itemId());
-            if (item == null || item == Items.AIR || worn.contains(item)) {
+            if (item == null || item == Items.AIR) {
                 continue;
             }
             bySlot.computeIfAbsent(entry.slot(), k -> new ArrayList<>()).add(item);
@@ -403,6 +400,10 @@ public final class SimulationManager {
                 // 玩家已关闭该物品时保持空槽（真实卸下的自动回填也尊重开关）
                 ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item);
                 if (key != null && DisabledStore.isDisabled(player, key)) {
+                    return true;
+                }
+                // 真实佩戴中（可能换了槽位）不回填，防双倍效果
+                if (physicallyWorn(handler).contains(item)) {
                     return true;
                 }
                 ItemStack stack = new ItemStack(item);
