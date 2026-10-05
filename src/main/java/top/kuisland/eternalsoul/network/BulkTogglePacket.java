@@ -69,7 +69,9 @@ public class BulkTogglePacket {
                 if (id == null || !CurioIndex.isKnown(id, sender)) {
                     continue; // 白名单：只接受当前探测索引内的饰品ID，防垃圾ID注入
                 }
-                boolean enable = msg.mode == SELECT_ALL || !disabled.contains(id.toString());
+                // 反选 = 翻转：当前在禁用集里 → 新状态为启用；反之为禁用。
+                // （SELECT_ALL 短路为全部启用；曾经的 !contains 写法是"保持现状"的空操作）
+                boolean enable = msg.mode == SELECT_ALL || disabled.contains(id.toString());
                 changes.put(id, enable);
             }
             com.mojang.logging.LogUtils.getLogger().info(
