@@ -346,11 +346,22 @@ public final class SimulationManager {
             }
         }
         if (inPlace) {
-            changes.forEach((id, enable) -> toggleInPlace(player, itemOf(id), enable));
+            int[] ok = {0};
+            int[] fail = {0};
+            changes.forEach((id, enable) -> {
+                if (toggleInPlace(player, itemOf(id), enable)) {
+                    ok[0]++;
+                } else {
+                    fail[0]++;
+                }
+            });
+            LOGGER.info("[EternalSoul-DIAG] applied in-place: player@{} n={} ok={} fail={}",
+                    System.identityHashCode(player), changes.size(), ok[0], fail[0]);
             Network.sendSync(player);
         } else {
-            diag("toggles: n={} -> full rebuild (not planned / clearing / over limit)",
-                    changes.size());
+            LOGGER.info("[EternalSoul-DIAG] toggles: player@{} n={} -> full rebuild "
+                            + "(not planned / clearing / over limit)",
+                    System.identityHashCode(player), changes.size());
             requestDeactivate(player, true);
         }
     }
