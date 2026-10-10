@@ -30,15 +30,9 @@ public class ApplyConfigPacket {
             java.util.Map<net.minecraft.resources.ResourceLocation, Boolean> personal =
                     top.kuisland.eternalsoul.EternalSoulConfig.loadPersonal(
                             sender.getGameProfile().getName());
-            java.util.Map<net.minecraft.resources.ResourceLocation, Boolean> source;
-            String sourceKey;
-            if (personal != null) {
-                source = personal;
-                sourceKey = "eternalsoul.gui.config_loaded_personal";
-            } else {
-                source = top.kuisland.eternalsoul.EternalSoulConfig.defaults();
-                sourceKey = "eternalsoul.gui.config_loaded_initial";
-            }
+            java.util.Map<net.minecraft.resources.ResourceLocation, Boolean> source =
+                    personal != null ? personal
+                            : top.kuisland.eternalsoul.EternalSoulConfig.defaults();
             top.kuisland.eternalsoul.DisabledStore.initDefaults(sender, source);
             // 立即同步：状态已在 NBT 落定，界面此刻就应刷新；
             // 后台重建链（清空→重锚→重激活）收尾还会再同步一次，冗余无害
@@ -46,9 +40,6 @@ public class ApplyConfigPacket {
             if (top.kuisland.eternalsoul.SimulationManager.isActive(sender)) {
                 top.kuisland.eternalsoul.SimulationManager.requestDeactivate(sender, true);
             }
-            long disabledCount = source.values().stream().filter(v -> !v).count();
-            sender.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                    sourceKey, disabledCount));
         });
         ctx.get().setPacketHandled(true);
     }

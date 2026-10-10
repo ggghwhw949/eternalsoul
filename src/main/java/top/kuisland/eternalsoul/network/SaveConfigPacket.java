@@ -4,9 +4,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
-import net.minecraft.network.chat.Component;
+import com.mojang.logging.LogUtils;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
+import org.slf4j.Logger;
 import top.kuisland.eternalsoul.CurioIndex;
 import top.kuisland.eternalsoul.DisabledStore;
 import top.kuisland.eternalsoul.EternalSoulConfig;
@@ -17,6 +18,8 @@ import top.kuisland.eternalsoul.EternalSoulConfig;
  * 此后 [加载配置] 将优先加载该个人配置而非初始配置。
  */
 public class SaveConfigPacket {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public static void encode(SaveConfigPacket msg, net.minecraft.network.FriendlyByteBuf buf) {
     }
@@ -39,9 +42,9 @@ public class SaveConfigPacket {
             }
             boolean ok = EternalSoulConfig.savePersonal(
                     sender.getGameProfile().getName(), state);
-            sender.sendSystemMessage(Component.translatable(ok
-                    ? "eternalsoul.gui.config_saved"
-                    : "eternalsoul.gui.config_save_failed"));
+            if (!ok) {
+                LOGGER.warn("[EternalSoul] 个人配置保存失败: {}", sender.getGameProfile().getName());
+            }
         });
         ctx.get().setPacketHandled(true);
     }

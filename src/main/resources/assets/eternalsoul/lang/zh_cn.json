@@ -16,9 +16,5 @@
   "eternalsoul.gui.select_all": "全选",
   "eternalsoul.gui.invert": "反选",
   "eternalsoul.gui.save_config": "保存配置",
-  "eternalsoul.gui.load_config": "加载配置",
-  "eternalsoul.gui.config_saved": "§a[永恒之魂]§r 已保存个人配置 (config/eternalsoul/players/)",
-  "eternalsoul.gui.config_save_failed": "§c[永恒之魂]§r 个人配置保存失败，详见服务端日志",
-  "eternalsoul.gui.config_loaded_personal": "§a[永恒之魂]§r 已加载个人配置（%d 项关闭）",
-  "eternalsoul.gui.config_loaded_initial": "§e[永恒之魂]§r 无个人配置，已加载初始配置（%d 项关闭）"
+  "eternalsoul.gui.load_config": "加载配置"
 }
