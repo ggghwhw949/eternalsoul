@@ -40,10 +40,11 @@ public class ApplyConfigPacket {
                 sourceKey = "eternalsoul.gui.config_loaded_initial";
             }
             top.kuisland.eternalsoul.DisabledStore.initDefaults(sender, source);
+            // 立即同步：状态已在 NBT 落定，界面此刻就应刷新；
+            // 后台重建链（清空→重锚→重激活）收尾还会再同步一次，冗余无害
+            Network.sendSync(sender);
             if (top.kuisland.eternalsoul.SimulationManager.isActive(sender)) {
                 top.kuisland.eternalsoul.SimulationManager.requestDeactivate(sender, true);
-            } else {
-                Network.sendSync(sender);
             }
             long disabledCount = source.values().stream().filter(v -> !v).count();
             sender.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
