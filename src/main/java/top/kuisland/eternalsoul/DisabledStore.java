@@ -1,6 +1,5 @@
 package top.kuisland.eternalsoul;
 
-import com.mojang.logging.LogUtils;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -9,7 +8,6 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
-import org.slf4j.Logger;
 
 /**
  * 每个玩家“已关闭模拟”的饰品集合，存放在 Forge 的 PlayerPersisted 持久 NBT 中，
@@ -19,8 +17,6 @@ public final class DisabledStore {
 
     private static final String KEY = "eternalsoul_disabled";
     private static final String INIT_KEY = "eternalsoul_initialized";
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     private DisabledStore() {
     }
@@ -50,14 +46,6 @@ public final class DisabledStore {
         }
         persistent.put(KEY, list);
         player.getPersistentData().put(Player.PERSISTED_NBT_TAG, persistent);
-        // 无节流探针：写入后立即回读验证，并记录玩家实例指纹
-        int verify = load(player).size();
-        LOGGER.info("[EternalSoul-DIAG] saveAll: player@{} write={} verify={}",
-                System.identityHashCode(player), set.size(), verify);
-        if (verify != set.size()) {
-            LOGGER.warn("[EternalSoul-DIAG] saveAll MISMATCH: wrote {} but read back {} "
-                    + "on player@{}", set.size(), verify, System.identityHashCode(player));
-        }
     }
 
     public static boolean isDisabled(Player player, ResourceLocation itemId) {
@@ -87,11 +75,6 @@ public final class DisabledStore {
                 disabled.add(id.toString());
             }
         });
-        // 无节流探针：initDefaults 会整体覆盖玩家自选开关——记录调用者栈，
-        // 任何"开关被重置回配置默认"的现象都可由此定位触发源
-        LOGGER.info("[EternalSoul-DIAG] initDefaults: player@{} reset to {} disabled",
-                System.identityHashCode(player), disabled.size(),
-                new IllegalStateException("initDefaults call site"));
         saveAll(player, disabled);
         CompoundTag persistent = player.getPersistentData()
                 .getCompound(Player.PERSISTED_NBT_TAG);

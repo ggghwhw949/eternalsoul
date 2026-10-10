@@ -58,8 +58,6 @@ public class BulkTogglePacket {
                 return;
             }
             if (msg.mode != SELECT_ALL && msg.mode != INVERT) {
-                com.mojang.logging.LogUtils.getLogger().info(
-                        "[EternalSoul-DIAG] bulk dropped: illegal mode {}", msg.mode);
                 return; // 非法模式直接丢弃
             }
             Set<String> disabled = top.kuisland.eternalsoul.DisabledStore.load(sender);
@@ -74,9 +72,6 @@ public class BulkTogglePacket {
                 boolean enable = msg.mode == SELECT_ALL || disabled.contains(id.toString());
                 changes.put(id, enable);
             }
-            com.mojang.logging.LogUtils.getLogger().info(
-                    "[EternalSoul-DIAG] bulk received: mode={} ids={} known={} preDisabled={}",
-                    msg.mode, msg.ids.size(), changes.size(), disabled.size());
             top.kuisland.eternalsoul.SimulationManager.applyBulkToggles(sender, changes);
         });
         ctx.get().setPacketHandled(true);

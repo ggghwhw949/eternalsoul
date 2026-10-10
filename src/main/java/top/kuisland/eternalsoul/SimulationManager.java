@@ -2,7 +2,6 @@ package top.kuisland.eternalsoul;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
-import com.mojang.logging.LogUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.slf4j.Logger;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -69,21 +67,6 @@ public final class SimulationManager {
     private static final int WATCHDOG_INTERVAL = 20;
     /** 就地开关的批量上限（与 BATCH 对齐；防极端巨型包的单tick风暴） */
     private static final int IN_PLACE_MAX = 2048;
-
-    private static final Logger LOGGER = LogUtils.getLogger();
-    /** 诊断日志节流（毫秒）：重建风暴时防止刷屏，同时保留可辨识的触发序列 */
-    private static long lastDiagTime;
-
-    /** 钳制探针节流（毫秒）：clampSlotsView 每帧调用，须独立限频 */
-    private static long lastClampDiag;
-
-    private static void diag(String format, Object... args) {
-        long now = System.currentTimeMillis();
-        if (now - lastDiagTime >= 250) {
-            lastDiagTime = now;
-            LOGGER.info("[EternalSoul-DIAG] " + format, args);
-        }
-    }
 
     private enum Phase {PLACING, CLEARING}
 
@@ -147,15 +130,7 @@ public final class SimulationManager {
         for (Map.Entry<String, ICurioStacksHandler> e : handler.getCurios().entrySet()) {
             if (e.getValue().getStacks() == stacksInstance) {
                 int count = tailCountFor(wearer, e.getKey());
-                int result = count > 0 ? Math.max(0, real - count) : real;
-                long now = System.currentTimeMillis();
-                if (now - lastClampDiag > 1000) {
-                    lastClampDiag = now;
-                    LOGGER.info("[EternalSoul-DIAG] clamp: side={} id={} real={} ours={} -> {}",
-                            wearer.level().isClientSide ? "client" : "server",
-                            e.getKey(), real, count, result);
-                }
-                return result;
+                return count > 0 ? Math.max(0, real - count) : real;
             }
         }
         return real;
@@ -237,8 +212,6 @@ public final class SimulationManager {
         buildPending(player, active, handler);
         ACTIVE.put(player.getUUID(), active);
         VirtualGuard.register(player, active.ranges);
-        diag("activate: slotTypes={} totalItems={}", active.ranges.size(),
-                active.plan.values().stream().mapToInt(List::size).sum());
         Network.sendSync(player);
     }
 
@@ -316,7 +289,6 @@ public final class SimulationManager {
         a.phase = Phase.PLACING;
         a.reactivate = false;
         buildPending(player, a, handler);
-        diag("resumePlacing (soul re-equipped during clearing)");
         Network.sendSync(player);
     }
 
@@ -357,22 +329,9 @@ public final class SimulationManager {
             }
         }
         if (inPlace) {
-            int[] ok = {0};
-            int[] fail = {0};
-            changes.forEach((id, enable) -> {
-                if (toggleInPlace(player, itemOf(id), enable)) {
-                    ok[0]++;
-                } else {
-                    fail[0]++;
-                }
-            });
-            LOGGER.info("[EternalSoul-DIAG] applied in-place: player@{} n={} ok={} fail={}",
-                    System.identityHashCode(player), changes.size(), ok[0], fail[0]);
+            changes.forEach((id, enable) -> toggleInPlace(player, itemOf(id), enable));
             Network.sendSync(player);
         } else {
-            LOGGER.info("[EternalSoul-DIAG] toggles: player@{} n={} -> full rebuild "
-                            + "(not planned / clearing / over limit)",
-                    System.identityHashCode(player), changes.size());
             requestDeactivate(player, true);
         }
     }
@@ -431,8 +390,6 @@ public final class SimulationManager {
                 ItemStack stack = new ItemStack(item);
                 VirtualGuard.track(stack);
                 handler.setEquippedCurio(e.getKey(), slot, stack);
-                diag("toggle-inplace: {} ENABLED at {}:{}",
-                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item), e.getKey(), slot);
                 return true;
             }
             if (current.isEmpty()) {
@@ -443,8 +400,6 @@ public final class SimulationManager {
             }
             VirtualGuard.untrack(current);
             handler.setEquippedCurio(e.getKey(), slot, ItemStack.EMPTY);
-            diag("toggle-inplace: {} DISABLED at {}:{}",
-                    net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(item), e.getKey(), slot);
             return true;
         }
         return false;
@@ -566,7 +521,6 @@ public final class SimulationManager {
         if (a == null) {
             return;
         }
-        diag("immediateClean (death/logout)");
         ICuriosItemHandler handler = handlerOf(player);
         VirtualGuard.unregister(player);
         if (handler == null) {
@@ -616,7 +570,6 @@ public final class SimulationManager {
             if (a.reanchorRequested && !a.selfMutating) {
                 a.reanchorRequested = false;
                 if (!isTailAnchored(a, handler)) {
-                    diag("reanchor: tail anchor broken, retargeting");
                     retarget(player, a, handler, true);
                     return;
                 }
@@ -641,7 +594,6 @@ public final class SimulationManager {
         boolean reactivate = a.reactivate && isWearingSoul(player);
         ACTIVE.remove(player.getUUID());
         VirtualGuard.unregister(player);
-        diag("deactivate complete, reactivate={}", reactivate);
         if (reactivate) {
             activate(player);
         } else {
@@ -703,12 +655,6 @@ public final class SimulationManager {
                 }
             }
             if (!healthy) {
-                diag("watchdog unhealthy: id={} slots={} expected={} modifier={} foreignStack={}",
-                        e.getKey(),
-                        stacksHandler == null ? -1 : stacksHandler.getSlots(),
-                        range[0] + range[1],
-                        stacksHandler != null
-                                && stacksHandler.getModifiers().containsKey(uuidFor(e.getKey())));
                 hardReset(player);
                 return;
             }
@@ -722,7 +668,6 @@ public final class SimulationManager {
         if (a == null || handler == null) {
             return;
         }
-        diag("hardReset (watchdog)");
         retarget(player, a, handler, false);
         ACTIVE.remove(player.getUUID());
         VirtualGuard.unregister(player);
@@ -765,15 +710,13 @@ public final class SimulationManager {
         if (a != null && a.phase == Phase.PLACING) {
             if (!event.getTo().isEmpty()) {
                 Item changed = event.getTo().getItem();
-                if (planned(a, changed) && toggleInPlace(player, changed, false)) {
-                    diag("real equip: cleared virtual slot of {}",
-                            net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
+                if (planned(a, changed)) {
+                    toggleInPlace(player, changed, false);
                 }
             } else if (!event.getFrom().isEmpty()) {
                 Item changed = event.getFrom().getItem();
-                if (planned(a, changed) && toggleInPlace(player, changed, true)) {
-                    diag("real unequip: refilled virtual slot of {}",
-                            net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(changed));
+                if (planned(a, changed)) {
+                    toggleInPlace(player, changed, true);
                 }
             }
         }
@@ -804,16 +747,10 @@ public final class SimulationManager {
     @SubscribeEvent
     public static void onCurioAttributeModifiers(CurioAttributeModifierEvent event) {
         if (VirtualGuard.isVirtual(event.getItemStack())) {
-            boolean removed = false;
             for (Attribute attribute : event.getOriginalModifiers().keySet()) {
                 if (attribute instanceof SlotAttribute) {
                     event.removeAttribute(attribute);
-                    removed = true;
                 }
-            }
-            if (removed) {
-                diag("slot-bonus suppressed on virtual stack: {}",
-                        net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(event.getItemStack().getItem()));
             }
         }
     }
