@@ -117,6 +117,24 @@ public final class SimulationManager {
         return VirtualGuard.isVirtualIndex(wearer, identifier, index);
     }
 
+    /**
+     * 该处理器上属于我们的槽位修饰符数量（name="eternalsoul"，ADDITION +N）。
+     * 数据源是 Curios 自身的修饰符同步（SPacketSyncModifiers）——修饰符到位与
+     * 容器页面重建由同一个网络包驱动，天然原子：不存在"数据晚于页面构建到达"
+     * 的竞态，也无需我们主动重建任何页面。双端一致（服务器本地注册、客户端
+     * 由 Curios 同步），且与服务端看门狗校验的是同一份修饰符表。
+     */
+    private static int ourModifierCount(ICurioStacksHandler stacksHandler) {
+        int count = 0;
+        for (net.minecraft.world.entity.ai.attributes.AttributeModifier mod
+                : stacksHandler.getModifiers().values()) {
+            if ("eternalsoul".equals(mod.getName())) {
+                count += (int) mod.getAmount();
+            }
+        }
+        return count;
+    }
+
     /** 双端通用：显示层钳制——隐藏我们尾部的虚拟槽数（CuriosContainerV2 mixin 调用） */
     public static int clampSlotsView(LivingEntity wearer, IDynamicStackHandler stacksInstance,
                                      int real) {
@@ -129,7 +147,7 @@ public final class SimulationManager {
         }
         for (Map.Entry<String, ICurioStacksHandler> e : handler.getCurios().entrySet()) {
             if (e.getValue().getStacks() == stacksInstance) {
-                int count = tailCountFor(wearer, e.getKey());
+                int count = ourModifierCount(e.getValue());
                 return count > 0 ? Math.max(0, real - count) : real;
             }
         }
@@ -145,16 +163,10 @@ public final class SimulationManager {
         int ourVisible = 0;
         for (Map.Entry<String, ICurioStacksHandler> e : handler.getCurios().entrySet()) {
             if (e.getValue().isVisible()) {
-                ourVisible += tailCountFor(wearer, e.getKey());
+                ourVisible += ourModifierCount(e.getValue());
             }
         }
         return ourVisible > 0 ? Math.max(0, visible - ourVisible) : visible;
-    }
-
-    private static int tailCountFor(LivingEntity wearer, String identifier) {
-        return wearer.level().isClientSide
-                ? top.kuisland.eternalsoul.client.ClientCache.countFor(identifier)
-                : VirtualGuard.countFor(wearer, identifier);
     }
 
     private static UUID uuidFor(String identifier) {

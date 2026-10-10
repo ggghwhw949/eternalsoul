@@ -131,19 +131,8 @@ public final class Network {
         }
 
         public static void handle(SyncPacket msg, Supplier<NetworkEvent.Context> ctx) {
-            ctx.get().enqueueWork(() -> {
-                top.kuisland.eternalsoul.client.ClientCache.update(msg.disabled, msg.active, msg.ranges);
-                // 显示钳制依赖 ClientCache 的区间数据；同步包晚于容器页面构建到达时，
-                // 已打开的饰品容器仍按旧数据渲染（虚拟槽显形）。参照 Curios 自身
-                // 同步包的做法，到达后主动重建当前容器页面——覆盖激活/重锚/开关
-                // 全部"数据晚到"场景（CuriosContainerV2 替换了 inventoryMenu，
-                // 它对玩家而言恒为打开状态）
-                net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-                if (mc.player != null
-                        && mc.player.containerMenu instanceof top.theillusivec4.curios.api.type.ICuriosMenu menu) {
-                    menu.resetSlots();
-                }
-            });
+            ctx.get().enqueueWork(() ->
+                    top.kuisland.eternalsoul.client.ClientCache.update(msg.disabled, msg.active, msg.ranges));
             ctx.get().setPacketHandled(true);
         }
     }

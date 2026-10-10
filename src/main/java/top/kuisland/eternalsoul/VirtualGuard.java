@@ -79,16 +79,6 @@ public final class VirtualGuard {
         return range != null && index >= range[0] && index < range[0] + range[1];
     }
 
-    /** 该槽位类型下我们的虚拟槽数量（用于容器显示层钳制） */
-    public static int countFor(LivingEntity wearer, String identifier) {
-        Map<String, int[]> ranges = wearer == null ? null : RANGES.get(wearer.getUUID());
-        if (ranges == null) {
-            return 0;
-        }
-        int[] range = ranges.get(identifier);
-        return range == null ? 0 : range[1];
-    }
-
     // ==================== 存档数据剥离（mixin 调用） ====================
 
     /**
