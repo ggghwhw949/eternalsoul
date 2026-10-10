@@ -149,6 +149,11 @@ public class CuriosListScreen extends Screen {
         }
     }
 
+    /** 服务端同步包到达时（界面开着）重建行：状态显示与服务端权威数据即时对齐 */
+    public void refreshFromSync() {
+        refreshEntries();
+    }
+
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);

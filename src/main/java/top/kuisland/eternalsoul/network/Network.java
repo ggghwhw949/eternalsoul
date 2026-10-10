@@ -133,8 +133,14 @@ public final class Network {
         }
 
         public static void handle(SyncPacket msg, Supplier<NetworkEvent.Context> ctx) {
-            ctx.get().enqueueWork(() ->
-                    top.kuisland.eternalsoul.client.ClientCache.update(msg.disabled, msg.active, msg.ranges));
+            ctx.get().enqueueWork(() -> {
+                top.kuisland.eternalsoul.client.ClientCache.update(msg.disabled, msg.active, msg.ranges);
+                // 列表界面开着时重建行，令显示与服务端权威状态即时对齐
+                if (net.minecraft.client.Minecraft.getInstance().screen
+                        instanceof top.kuisland.eternalsoul.client.CuriosListScreen screen) {
+                    screen.refreshFromSync();
+                }
+            });
             ctx.get().setPacketHandled(true);
         }
     }
