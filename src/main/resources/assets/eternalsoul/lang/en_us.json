@@ -1,6 +1,7 @@
 {
   "itemGroup.eternalsoul": "Eternal Soul",
   "item.eternalsoul.eternal_soul": "Eternal Soul",
+  "eternalsoul.tooltip.divinity": "Be they mortal or immortal, all acknowledge your divinity",
   "eternalsoul.tooltip.1": "While worn, simulates wearing every curio",
   "eternalsoul.tooltip.2": "detected in this game.",
   "eternalsoul.tooltip.3": "Press %s to configure the simulated list.",

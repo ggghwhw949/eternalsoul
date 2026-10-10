@@ -1,6 +1,7 @@
 {
   "itemGroup.eternalsoul": "永恒之魂",
   "item.eternalsoul.eternal_soul": "永恒之魂",
+  "eternalsoul.tooltip.divinity": "无论凡人或不朽，一切都承认你的神性",
   "eternalsoul.tooltip.1": "佩戴后，将模拟佩戴本游戏中",
   "eternalsoul.tooltip.2": "探测到的所有饰品。",
   "eternalsoul.tooltip.3": "按 %s 配置模拟列表。",
