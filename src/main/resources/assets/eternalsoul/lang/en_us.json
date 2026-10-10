@@ -18,5 +18,7 @@
   "eternalsoul.gui.save_config": "Save Config",
   "eternalsoul.gui.load_config": "Load Config",
   "eternalsoul.gui.config_saved": "§a[Eternal Soul]§r Personal config saved (config/eternalsoul/players/)",
-  "eternalsoul.gui.config_save_failed": "§c[Eternal Soul]§r Failed to save personal config, see server log"
+  "eternalsoul.gui.config_save_failed": "§c[Eternal Soul]§r Failed to save personal config, see server log",
+  "eternalsoul.gui.config_loaded_personal": "§a[Eternal Soul]§r Personal config loaded (%d disabled)",
+  "eternalsoul.gui.config_loaded_initial": "§e[Eternal Soul]§r No personal config, initial config loaded (%d disabled)"
 }

@@ -30,14 +30,24 @@ public class ApplyConfigPacket {
             java.util.Map<net.minecraft.resources.ResourceLocation, Boolean> personal =
                     top.kuisland.eternalsoul.EternalSoulConfig.loadPersonal(
                             sender.getGameProfile().getName());
-            top.kuisland.eternalsoul.DisabledStore.initDefaults(sender,
-                    personal != null ? personal
-                            : top.kuisland.eternalsoul.EternalSoulConfig.defaults());
+            java.util.Map<net.minecraft.resources.ResourceLocation, Boolean> source;
+            String sourceKey;
+            if (personal != null) {
+                source = personal;
+                sourceKey = "eternalsoul.gui.config_loaded_personal";
+            } else {
+                source = top.kuisland.eternalsoul.EternalSoulConfig.defaults();
+                sourceKey = "eternalsoul.gui.config_loaded_initial";
+            }
+            top.kuisland.eternalsoul.DisabledStore.initDefaults(sender, source);
             if (top.kuisland.eternalsoul.SimulationManager.isActive(sender)) {
                 top.kuisland.eternalsoul.SimulationManager.requestDeactivate(sender, true);
             } else {
                 Network.sendSync(sender);
             }
+            long disabledCount = source.values().stream().filter(v -> !v).count();
+            sender.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                    sourceKey, disabledCount));
         });
         ctx.get().setPacketHandled(true);
     }
