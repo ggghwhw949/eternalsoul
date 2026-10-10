@@ -15,5 +15,8 @@
   "eternalsoul.gui.hint": "Click an entry to toggle simulation",
   "eternalsoul.gui.select_all": "All On",
   "eternalsoul.gui.invert": "Invert",
-  "eternalsoul.gui.apply_config": "Apply Config"
+  "eternalsoul.gui.save_config": "Save Config",
+  "eternalsoul.gui.load_config": "Load Config",
+  "eternalsoul.gui.config_saved": "§a[Eternal Soul]§r Personal config saved (config/eternalsoul/players/)",
+  "eternalsoul.gui.config_save_failed": "§c[Eternal Soul]§r Failed to save personal config, see server log"
 }

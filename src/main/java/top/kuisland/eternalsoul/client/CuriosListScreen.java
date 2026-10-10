@@ -66,20 +66,31 @@ public class CuriosListScreen extends Screen {
         addRenderableWidget(Button.builder(
                         Component.translatable("eternalsoul.gui.select_all"),
                         b -> bulk(BulkTogglePacket.SELECT_ALL))
-                .bounds(this.width / 2 - 90, this.height - 26, 50, 20).build());
+                .bounds(this.width / 2 - 131, this.height - 26, 50, 20).build());
         addRenderableWidget(Button.builder(
                         Component.translatable("eternalsoul.gui.invert"),
                         b -> bulk(BulkTogglePacket.INVERT))
-                .bounds(this.width / 2 - 36, this.height - 26, 50, 20).build());
+                .bounds(this.width / 2 - 77, this.height - 26, 50, 20).build());
         addRenderableWidget(Button.builder(
-                        Component.translatable("eternalsoul.gui.apply_config"),
-                        b -> applyConfig())
-                .bounds(this.width / 2 + 18, this.height - 26, 72, 20).build());
+                        Component.translatable("eternalsoul.gui.save_config"),
+                        b -> saveConfig())
+                .bounds(this.width / 2 - 23, this.height - 26, 72, 20).build());
+        addRenderableWidget(Button.builder(
+                        Component.translatable("eternalsoul.gui.load_config"),
+                        b -> loadConfig())
+                .bounds(this.width / 2 + 53, this.height - 26, 72, 20).build());
         setInitialFocus(this.searchBox);
     }
 
-    /** 应用配置文件的默认开关（用于全选/反选误操作后恢复初始设置） */
-    private void applyConfig() {
+    /** 保存配置：把当前开关状态写入个人配置文件（服务端执行，聊天栏反馈结果） */
+    private void saveConfig() {
+        Network.CHANNEL.sendToServer(new top.kuisland.eternalsoul.network.SaveConfigPacket());
+        Minecraft.getInstance().getSoundManager().play(
+                SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+    }
+
+    /** 加载配置：个人配置存在则应用个人配置，否则回退初始配置（服务端执行） */
+    private void loadConfig() {
         Network.CHANNEL.sendToServer(new ApplyConfigPacket());
         Minecraft.getInstance().getSoundManager().play(
                 SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));

@@ -15,5 +15,8 @@
   "eternalsoul.gui.hint": "点击条目可开关模拟",
   "eternalsoul.gui.select_all": "全选",
   "eternalsoul.gui.invert": "反选",
-  "eternalsoul.gui.apply_config": "应用配置"
+  "eternalsoul.gui.save_config": "保存配置",
+  "eternalsoul.gui.load_config": "加载配置",
+  "eternalsoul.gui.config_saved": "§a[永恒之魂]§r 已保存个人配置 (config/eternalsoul/players/)",
+  "eternalsoul.gui.config_save_failed": "§c[永恒之魂]§r 个人配置保存失败，详见服务端日志"
 }
